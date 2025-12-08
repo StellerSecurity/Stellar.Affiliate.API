@@ -158,7 +158,7 @@ class AffiliateEventController extends Controller
             }
         }
 
-        // 2) If billing sends affiliate_code (e.g. "BLERIM01")
+        // 2) If billing sends affiliate_code (e.g. "123456")
         if (! empty($data['affiliate_code'])) {
             $affiliate = Affiliate::where('public_code', $data['affiliate_code'])->first();
             if ($affiliate) {
