@@ -24,11 +24,10 @@ class AffiliateTrackingController extends Controller
      */
     public function redirect(Request $request, string $code)
     {
-
         $affiliate = Affiliate::where('public_code', $code)->first();
 
         if (! $affiliate) {
-            return redirect('https://stellarsecurity.com/');
+            return redirect(config('app.url'));
         }
 
         $source   = $request->query('src');
@@ -37,7 +36,6 @@ class AffiliateTrackingController extends Controller
         $sub2     = $request->query('sub2');
         $product  = $request->query('product'); // e.g. vpn, antivirus, notes
 
-        // Find or create campaign for this affiliate
         $campaignModel = null;
         if ($campaign) {
             $campaignModel = AffiliateCampaign::firstOrCreate(
@@ -53,7 +51,6 @@ class AffiliateTrackingController extends Controller
             );
         }
 
-        // Log click
         AffiliateClick::create([
             'affiliate_id' => $affiliate->id,
             'campaign_id'  => $campaignModel?->id,
@@ -65,7 +62,6 @@ class AffiliateTrackingController extends Controller
             'referrer'     => $request->headers->get('referer'),
         ]);
 
-        // Create affiliate session in affiliate DB
         $sessionToken = Str::random(40);
         $expiresAt    = now()->addDays(180);
 
@@ -78,11 +74,20 @@ class AffiliateTrackingController extends Controller
             'expires_at'          => $expiresAt,
         ]);
 
-        // Decide where to send the user (default product landing)
+        // 1) Optional: campaign specific redirect (if you add such a column later)
+        $campaignRedirect = $campaignModel?->redirect_url ?? null;
+
+        // 2) Affiliate base redirect from DB
+        $affiliateRedirect = $affiliate->base_redirect_url ?? null;
+
+        // 3) Global default
         $defaultRedirect = config('affiliate.default_redirect_url', 'https://stellarvpn.org/');
 
-        // Build redirect URL with tracking info as query params
-        $redirectUrl = $this->buildRedirectUrl($defaultRedirect, [
+        $baseRedirect = $campaignRedirect
+            ?: $affiliateRedirect
+                ?: $defaultRedirect;
+
+        $redirectUrl = $this->buildRedirectUrl($baseRedirect, [
             'aff_session' => $sessionToken,
             'code'        => $affiliate->public_code,
             'src'         => $source,

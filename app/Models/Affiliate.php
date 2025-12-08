@@ -15,6 +15,7 @@ class Affiliate extends Model
         'status',
         'country',
         'payout_currency',
+        'base_redirect_url'
     ];
 
     protected $casts = [
