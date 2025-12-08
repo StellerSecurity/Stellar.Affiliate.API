@@ -22,7 +22,7 @@ class AffiliateEventController extends Controller
      *   "user_id": 678,
      *   "external_user_id": 678,
      *   "affiliate_id": 1,
-     *   "affiliate_code": "BLERIM01",
+     *   "affiliate_code": "123456",
      *   "product": "stellar_vpn",
      *   "plan": "annual",
      *   "amount": 59.99,
