@@ -3,27 +3,49 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Affiliate;
+use App\Models\AffiliateCommission;
+use App\Models\Payout;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AffiliateDashboardController extends Controller
 {
-    public function overview(Request $request)
+    public function overview(Request $request): JsonResponse
     {
-        // Later: resolve affiliate from auth / api key / token
-        // For now you can hardcode or debug with a fixed affiliate_id.
+        $affiliate = $request->attributes->get('affiliate');
 
-        // Example placeholder response
+        // Safety check
+        if (! $affiliate) {
+            return response()->json(['message' => 'Affiliate not resolved'], 400);
+        }
+
+        $affiliateId = $affiliate->id;
+
+        // Example basic stats – du kan udbygge senere
+        $totalEarnings = AffiliateCommission::where('affiliate_id', $affiliateId)
+            ->whereIn('status', ['approved', 'paid_out'])
+            ->sum('amount');
+
+        $last30Earnings = AffiliateCommission::where('affiliate_id', $affiliateId)
+            ->whereIn('status', ['approved', 'paid_out'])
+            ->where('created_at', '>=', now()->subDays(30))
+            ->sum('amount');
+
+        $totalPaid = Payout::where('affiliate_id', $affiliateId)
+            ->where('status', 'paid')
+            ->sum('amount');
+
         return response()->json([
-            'total_earnings'        => 0,
-            'last_30_days_earnings' => 0,
-            'clicks_last_30'        => 0,
-            'signups_last_30'       => 0,
-            'conversion_rate'       => 0,
-            'active_subscriptions'  => 0,
-            'next_payout_amount'    => 0,
-            'next_payout_in_days'   => null,
-            'latest_sales'          => [],
+            'affiliate' => [
+                'id'            => $affiliate->id,
+                'code'          => $affiliate->public_code,
+                'status'        => $affiliate->status,
+                'payoutCurrency'=> $affiliate->payout_currency,
+            ],
+            'total_earnings'        => $totalEarnings,
+            'last_30_days_earnings' => $last30Earnings,
+            'total_paid_out'        => $totalPaid,
+            // You can add more stats later
         ]);
     }
 }

@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'affiliate.basic' => \App\Http\Middleware\AffiliateBasicAuth::class,
+            'affiliate.token' => \App\Http\Middleware\AffiliateTokenAuth::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
