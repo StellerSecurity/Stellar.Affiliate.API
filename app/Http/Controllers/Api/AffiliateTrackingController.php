@@ -31,6 +31,8 @@ class AffiliateTrackingController extends Controller
             return redirect('https://stellarsecurity.com/');
         }
 
+        return "";
+
         $source   = $request->query('src');
         $campaign = $request->query('campaign');
         $sub1     = $request->query('sub1');
