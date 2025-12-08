@@ -92,6 +92,8 @@ class AffiliateTrackingController extends Controller
             'product'     => $product,
         ]);
 
+        return $redirectUrl;
+
         return redirect($redirectUrl);
     }
 
