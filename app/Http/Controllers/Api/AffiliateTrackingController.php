@@ -13,20 +13,20 @@ use Illuminate\Support\Str;
 class AffiliateTrackingController extends Controller
 {
     /**
-     * Handle incoming affiliate click, set 180-day cookie and redirect to landing.
+     * Handle incoming affiliate click and redirect to product site
+     * with affiliate session as query parameter.
      *
-     * Example route (with v1 prefix in routes/api.php):
-     *   GET /api/v1/r/{code}
+     * Example:
+     *   https://stellarafi.com/api/v1/r/AFF123?src=youtube&campaign=review_oct&product=vpn
      *
-     * Example URL:
-     *   /api/v1/r/12345code?src=youtube&campaign=yt_review_nov&sub1=video_id
+     * Redirects to something like:
+     *   https://stellarvpn.org/?aff_session=SESSIONTOKEN&code=AFF123&src=youtube&campaign=review_oct&product=vpn
      */
     public function redirect(Request $request, string $code)
     {
         $affiliate = Affiliate::where('public_code', $code)->first();
 
         if (! $affiliate) {
-            // If affiliate not found, redirect to default app URL
             return redirect(config('app.url'));
         }
 
@@ -34,8 +34,9 @@ class AffiliateTrackingController extends Controller
         $campaign = $request->query('campaign');
         $sub1     = $request->query('sub1');
         $sub2     = $request->query('sub2');
+        $product  = $request->query('product'); // e.g. vpn, antivirus, notes
 
-        // Find or create campaign (you can change this to only allow predefined campaigns)
+        // Find or create campaign for this affiliate
         $campaignModel = null;
         if ($campaign) {
             $campaignModel = AffiliateCampaign::firstOrCreate(
@@ -51,7 +52,7 @@ class AffiliateTrackingController extends Controller
             );
         }
 
-        // Create click record
+        // Log click
         AffiliateClick::create([
             'affiliate_id' => $affiliate->id,
             'campaign_id'  => $campaignModel?->id,
@@ -63,7 +64,7 @@ class AffiliateTrackingController extends Controller
             'referrer'     => $request->headers->get('referer'),
         ]);
 
-        // Create session and set cookie
+        // Create affiliate session in affiliate DB
         $sessionToken = Str::random(40);
         $expiresAt    = now()->addDays(180);
 
@@ -76,18 +77,21 @@ class AffiliateTrackingController extends Controller
             'expires_at'          => $expiresAt,
         ]);
 
-        // Set cookie for 180 days
-        $response = redirect(config('app.url')); // TODO: change to your real landing URL if needed
+        // Decide where to send the user (default product landing)
+        $defaultRedirect = config('affiliate.default_redirect_url', 'https://stellarvpn.org/');
 
-        return $response->withCookie(cookie(
-            name: 'stellar_aff',
-            value: $sessionToken,
-            minutes: 180 * 24 * 60, // 180 days
-            path: '/',
-            secure: true,
-            httpOnly: true,
-            sameSite: 'lax'
-        ));
+        // Build redirect URL with tracking info as query params
+        $redirectUrl = $this->buildRedirectUrl($defaultRedirect, [
+            'aff_session' => $sessionToken,
+            'code'        => $affiliate->public_code,
+            'src'         => $source,
+            'campaign'    => $campaign,
+            'sub1'        => $sub1,
+            'sub2'        => $sub2,
+            'product'     => $product,
+        ]);
+
+        return redirect($redirectUrl);
     }
 
     protected function hashIp(?string $ip): ?string
@@ -96,7 +100,22 @@ class AffiliateTrackingController extends Controller
             return null;
         }
 
-        // Simple hashing to avoid storing raw IP addresses
         return hash('sha256', $ip . config('app.key'));
+    }
+
+    protected function buildRedirectUrl(string $base, array $params): string
+    {
+        $filtered = array_filter($params, fn ($v) => ! is_null($v) && $v !== '');
+        $query    = http_build_query($filtered);
+
+        if ($query === '') {
+            return $base;
+        }
+
+        if (str_contains($base, '?')) {
+            return $base . '&' . $query;
+        }
+
+        return $base . '?' . $query;
     }
 }
