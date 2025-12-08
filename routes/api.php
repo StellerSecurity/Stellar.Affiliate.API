@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\LoginController;
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\AffiliateDashboardController;
@@ -19,6 +20,9 @@ use App\Http\Controllers\Api\AffiliatePayoutController;
 Route::prefix('v1')
     ->middleware('affiliate.basic')
     ->group(function () {
+
+        Route::post('/auth/login', [LoginController::class, 'login'])
+            ->name('affiliate.auth.login');
 
         /**
          * Public tracking endpoint (now protected by Basic Auth too)
