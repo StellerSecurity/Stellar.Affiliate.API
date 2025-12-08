@@ -19,7 +19,7 @@ class AffiliateTrackingController extends Controller
      *   GET /api/v1/r/{code}
      *
      * Example URL:
-     *   /api/v1/r/BLERIM01?src=youtube&campaign=yt_review_nov&sub1=video_id
+     *   /api/v1/r/12345code?src=youtube&campaign=yt_review_nov&sub1=video_id
      */
     public function redirect(Request $request, string $code)
     {
