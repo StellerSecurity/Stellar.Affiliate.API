@@ -104,7 +104,7 @@ class AffiliateEventController extends Controller
         }
 
         // Refund window (days) before commission is eligible for payout
-        $refundDays = (int) env('AFFILIATE_REFUND_DAYS', 30);
+        $refundDays = (int) env('AFFILIATE_REFUND_DAYS', 14);
 
         $commission = AffiliateCommission::create([
             'affiliate_id'       => $affiliateId,
