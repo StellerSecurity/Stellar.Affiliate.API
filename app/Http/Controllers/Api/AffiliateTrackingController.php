@@ -24,6 +24,13 @@ class AffiliateTrackingController extends Controller
      */
     public function redirect(Request $request, string $code)
     {
+
+        return response()->json([
+            'status' => 'ok',
+            'code'   => $code,
+            'query'  => $request->query(),
+        ]);
+
         $affiliate = Affiliate::where('public_code', $code)->first();
 
         if (! $affiliate) {
