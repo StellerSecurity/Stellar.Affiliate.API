@@ -21,18 +21,6 @@ Route::prefix('v1')->group(function () {
     Route::post('/auth/login', [LoginController::class, 'login'])
         ->name('affiliate.auth.login');
 
-    // Public tracking endpoint (affiliate links)
-    //
-    // Example:
-    //   https://affiliate.stellar/api/v1/r/AFF123?src=youtube&campaign=review_oct
-    //
-    // This will:
-    //  - log the click
-    //  - create an affiliate session
-    //  - set a 180-day cookie
-    //  - redirect to your main app URL
-    Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
-        ->name('affiliate.track');
 });
 
 // 🔐 Internal service-to-service (Basic Auth with API_USERNAME / API_PASSWORD)

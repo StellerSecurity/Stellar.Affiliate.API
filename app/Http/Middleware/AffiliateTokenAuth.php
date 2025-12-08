@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Affiliate;
+use app\Models\Affiliate;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
@@ -36,7 +36,7 @@ class AffiliateTokenAuth
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        /** @var \App\Models\Affiliate|null $affiliate */
+        /** @var \app\Models\Affiliate|null $affiliate */
         $affiliate = Affiliate::where('external_user_id', $user->id)->first();
 
         if (! $affiliate) {
