@@ -21,9 +21,6 @@ Route::prefix('v1')->group(function () {
     Route::post('/auth/login', [LoginController::class, 'login'])
         ->name('affiliate.auth.login');
 
-//   https://stellarafi.com/api/v1/r/AFF123?src=youtube&campaign=review_oct&product=vpn
-    Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
-        ->name('affiliate.track.public');
 });
 
 // 🔐 Internal service-to-service (Basic Auth with API_USERNAME / API_PASSWORD)

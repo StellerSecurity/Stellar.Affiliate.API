@@ -12,5 +12,6 @@ Route::get('/', function () {
 
 // Public affiliate tracking – no /api, no /v1
 //
-// Eksempel:
-
+//   https://stellarafi.com/r/AFF123?src=youtube&campaign=review_oct&product=vpn
+Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
+    ->name('affiliate.track.public');
