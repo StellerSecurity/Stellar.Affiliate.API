@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AffiliateTrackingController;
 use App\Http\Controllers\AffiliatePortalController;
 use App\Http\Controllers\Admin\AuthController;
+use Illuminate\Support\Facades\Artisan;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -11,7 +13,14 @@ use App\Http\Controllers\Admin\AuthController;
 |--------------------------------------------------------------------------
 */
 Route::get('/', function () {
-    return 'affiliate';
+    // Clear all relevant caches
+    Artisan::call('optimize:clear');   // clears config, route, view, cache
+    Artisan::call('cache:clear');      // app cache
+    Artisan::call('route:clear');      // route cache
+    Artisan::call('config:clear');     // config cache
+    Artisan::call('view:clear');       // compiled views
+
+    return 'kk';
 });
 
 /*
