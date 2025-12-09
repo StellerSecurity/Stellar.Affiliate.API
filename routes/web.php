@@ -20,6 +20,13 @@ Route::get('/', function () {
     Artisan::call('config:clear');     // config cache
     Artisan::call('view:clear');       // compiled views
 
+    // Process pending jobs once on the default queue
+    Artisan::call('queue:work', [
+        '--once' => true,
+        '--queue' => 'default',
+        '--stop-when-empty' => true,
+    ]);
+
     return 'kk';
 });
 
