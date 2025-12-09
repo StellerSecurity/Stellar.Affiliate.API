@@ -15,7 +15,8 @@ class Affiliate extends Model
         'status',
         'country',
         'payout_currency',
-        'base_redirect_url'
+        'base_redirect_url',
+        'name'
     ];
 
     protected $casts = [
@@ -23,6 +24,10 @@ class Affiliate extends Model
     ];
 
     // Relationships
+    public function affiliate()
+    {
+        return $this->belongsTo(Affiliate::class);
+    }
 
     public function campaigns()
     {

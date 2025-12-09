@@ -5,12 +5,20 @@ use App\Http\Controllers\Api\AffiliateTrackingController;
 use App\Http\Controllers\AffiliatePortalController;
 use App\Http\Controllers\Admin\AuthController;
 
-// Simple root check
+/*
+|--------------------------------------------------------------------------
+| Public Root
+|--------------------------------------------------------------------------
+*/
 Route::get('/', function () {
     return 'affiliate';
 });
 
-// Affiliate portal login / logout
+/*
+|--------------------------------------------------------------------------
+| Affiliate Portal Authentication
+|--------------------------------------------------------------------------
+*/
 Route::get('/affiliate/login', [AuthController::class, 'showLoginForm'])
     ->name('affiliate.login');
 
@@ -20,25 +28,36 @@ Route::post('/affiliate/login', [AuthController::class, 'login'])
 Route::post('/affiliate/logout', [AuthController::class, 'logout'])
     ->name('affiliate.logout');
 
-// Protected affiliate portal (requires web guard)
+/*
+|--------------------------------------------------------------------------
+| Protected Affiliate Portal (requires Login)
+|--------------------------------------------------------------------------
+*/
 Route::middleware(['auth:web'])
     ->prefix('affiliate')
     ->group(function () {
+
+        // Dashboard
         Route::get('/dashboard', [AffiliatePortalController::class, 'dashboard'])
             ->name('affiliate.dashboard');
 
+        // Sales
         Route::get('/sales', [AffiliatePortalController::class, 'sales'])
             ->name('affiliate.sales');
 
+        // Payouts
         Route::get('/payouts', [AffiliatePortalController::class, 'payouts'])
             ->name('affiliate.payouts');
 
+        // Analytics
         Route::get('/analytics', [AffiliatePortalController::class, 'analytics'])
             ->name('affiliate.analytics');
 
+        // Settings
         Route::get('/settings', [AffiliatePortalController::class, 'settings'])
             ->name('affiliate.settings');
 
+        // Clicks / Sessions / Commissions
         Route::get('/clicks', [AffiliatePortalController::class, 'clicks'])
             ->name('affiliate.clicks');
 
@@ -47,8 +66,27 @@ Route::middleware(['auth:web'])
 
         Route::get('/commissions', [AffiliatePortalController::class, 'commissions'])
             ->name('affiliate.commissions');
+
+        /*
+        |--------------------------------------------------------------------------
+        | NEW: Affiliate Management (list + create)
+        |--------------------------------------------------------------------------
+        */
+        Route::get('/affiliates', [AffiliatePortalController::class, 'affiliatesIndex'])
+            ->name('affiliate.affiliates.index');
+
+        Route::post('/affiliates', [AffiliatePortalController::class, 'affiliatesStore'])
+            ->name('affiliate.affiliates.store');
     });
 
-// Public affiliate tracking – no /api, no /v1
+/*
+|--------------------------------------------------------------------------
+| Public Tracking Redirect
+|--------------------------------------------------------------------------
+|
+| Example:
+|   https://stellarafi.com/r/AFFCODE?src=youtube&campaign=review&product=vpn
+|
+*/
 Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
     ->name('affiliate.track.public');
