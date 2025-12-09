@@ -33,9 +33,8 @@ class AffiliateEventController extends Controller
      */
     public function handleOrderPaid(Request $request): JsonResponse
     {
+
         $data = $request->validate([
-            // Optional generic marker
-            'event'           => 'sometimes|string',
 
             // Core billing identifiers
             'order_id'        => 'required|integer',
@@ -54,6 +53,7 @@ class AffiliateEventController extends Controller
             'session_token'   => 'nullable|string|max:255',
             'install_token'   => 'nullable|string|max:255',
         ]);
+
 
         $isRecurring = (bool) $data['is_recurring'];
         $type        = $isRecurring ? 'recurring' : 'initial';
