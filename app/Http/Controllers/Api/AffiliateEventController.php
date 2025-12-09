@@ -52,6 +52,8 @@ class AffiliateEventController extends Controller
             'is_recurring'    => 'required|boolean',
             'session_token'   => 'nullable|string|max:255',
             'install_token'   => 'nullable|string|max:255',
+
+            'external_payment_id'=> 'required|string|max:255'
         ]);
 
 
@@ -84,17 +86,18 @@ class AffiliateEventController extends Controller
 
         $commissionAmount = round($data['amount'] * $rate, 2);
 
-        // Idempotency: avoid duplicate commission for same order + type
+        // Idempotency: one commission per external payment + type + affiliate
         $existing = AffiliateCommission::where('affiliate_id', $affiliateId)
-            ->where('order_id', $data['order_id'])
+            ->where('external_payment_id', $data['external_payment_id'])
             ->where('type', $type)
             ->first();
 
         if ($existing) {
             Log::info('[AffiliateEvent] Duplicate commission ignored', [
-                'order_id'     => $data['order_id'],
-                'affiliate_id' => $affiliateId,
-                'type'         => $type,
+                'order_id'           => $data['order_id'],
+                'affiliate_id'       => $affiliateId,
+                'type'               => $type,
+                'external_payment_id'=> $data['external_payment_id'],
             ]);
 
             return response()->json([
@@ -119,6 +122,7 @@ class AffiliateEventController extends Controller
             'status'             => 'pending',
             'payout_id'          => null,
             'eligible_payout_at' => now()->addDays($refundDays),
+            'external_payment_id' => $data['external_payment_id']
         ]);
 
         Log::info('[AffiliateEvent] Commission created', [
