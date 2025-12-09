@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Affiliate;
+use App\Models\AffiliateCampaign;
 use App\Models\AffiliateClick;
 use App\Models\AffiliateSession;
 use App\Models\AffiliateCommission;
@@ -81,6 +82,49 @@ class AffiliatePortalController extends Controller
             'affiliates' => $affiliates,
             'search'     => $search,
         ]);
+    }
+
+    public function campaignsIndex(Request $request)
+    {
+        $search = $request->query('q');
+
+        $query = AffiliateCampaign::with('affiliate')
+            ->orderByDesc('created_at');
+
+        if ($search) {
+            $query->where('name', 'like', "%{$search}%")
+                ->orWhere('source', 'like', "%{$search}%")
+                ->orWhereHas('affiliate', function ($q) use ($search) {
+                    $q->where('public_code', 'like', "%{$search}%");
+                });
+        }
+
+        $campaigns = $query->paginate(25)->withQueryString();
+
+        $affiliates = Affiliate::orderBy('public_code')->get(['id', 'public_code']);
+
+        return view('affiliate-campaigns', [
+            'campaigns'  => $campaigns,
+            'affiliates' => $affiliates,
+            'search'     => $search,
+        ]);
+    }
+
+    public function campaignsStore(Request $request)
+    {
+        $data = $request->validate([
+            'affiliate_id' => ['required', 'exists:affiliates,id'],
+            'name'         => ['required', 'string', 'max:255'],
+            'source'       => ['nullable', 'string', 'max:50'],
+            'sub_id1'      => ['nullable', 'string', 'max:255'],
+            'sub_id2'      => ['nullable', 'string', 'max:255'],
+        ]);
+
+        AffiliateCampaign::create($data);
+
+        return redirect()
+            ->route('affiliate.campaigns.index')
+            ->with('status', 'Campaign created successfully!');
     }
 
     public function affiliatesStore(Request $request)

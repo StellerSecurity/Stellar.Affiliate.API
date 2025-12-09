@@ -22,6 +22,8 @@ Route::get('/', function () {
 Route::get('/affiliate/login', [AuthController::class, 'showLoginForm'])
     ->name('affiliate.login');
 
+
+
 Route::post('/affiliate/login', [AuthController::class, 'login'])
     ->name('affiliate.login.post');
 
@@ -44,6 +46,13 @@ Route::middleware(['auth:web'])
         // Sales
         Route::get('/sales', [AffiliatePortalController::class, 'sales'])
             ->name('affiliate.sales');
+
+        Route::get('/campaigns', [AffiliatePortalController::class, 'campaignsIndex'])
+            ->name('affiliate.campaigns.index');
+
+        Route::post('/campaigns', [AffiliatePortalController::class, 'campaignsStore'])
+            ->name('affiliate.campaigns.store');
+
 
         // Payouts
         Route::get('/payouts', [AffiliatePortalController::class, 'payouts'])

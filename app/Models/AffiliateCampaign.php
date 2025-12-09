@@ -27,6 +27,7 @@ class AffiliateCampaign extends Model
         return $this->belongsTo(Affiliate::class);
     }
 
+
     public function clicks()
     {
         return $this->hasMany(AffiliateClick::class, 'campaign_id');
