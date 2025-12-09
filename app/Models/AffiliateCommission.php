@@ -20,6 +20,7 @@ class AffiliateCommission extends Model
         'status',
         'payout_id',
         'eligible_payout_at',
+        'external_payment_id'
     ];
 
     protected $casts = [
