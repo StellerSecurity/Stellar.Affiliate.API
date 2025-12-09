@@ -36,6 +36,10 @@ Route::get('/affiliate/login', [AuthController::class, 'showLoginForm'])
 Route::post('/affiliate/login', [AuthController::class, 'login'])
     ->name('affiliate.login.post');
 
+Route::get('/login', function () {
+    return redirect()->route('affiliate.login');
+})->name('login');
+
 Route::post('/affiliate/logout', [AuthController::class, 'logout'])
     ->name('affiliate.logout');
 
@@ -47,6 +51,7 @@ Route::post('/affiliate/logout', [AuthController::class, 'logout'])
 Route::middleware(['auth:web'])
     ->prefix('affiliate')
     ->group(function () {
+
 
         // Dashboard
         Route::get('/dashboard', [AffiliatePortalController::class, 'dashboard'])
