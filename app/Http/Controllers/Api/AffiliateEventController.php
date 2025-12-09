@@ -3,64 +3,76 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Affiliate;
 use App\Models\AffiliateCommission;
+use App\Models\AffiliateSession;
+use App\Models\AffiliateInstallToken;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\HttpFoundation\Response;
 
 class AffiliateEventController extends Controller
 {
     /**
-     * Handle normalized "order paid" events coming from the billing service.
+     * Handle normalized "order paid" events coming from billing / webhooks.
      *
-     * Expected JSON payload example:
+     * Expected JSON payload (new style):
      *
      * {
-     *   "event": "order.paid",
      *   "order_id": 12345,
      *   "user_id": 678,
-     *   "external_user_id": 678,
-     *   "affiliate_id": 1,
-     *   "affiliate_code": "123456",
-     *   "product": "stellar_vpn",
-     *   "plan": "annual",
+     *   "subscription_id": 10,
      *   "amount": 59.99,
      *   "currency": "EUR",
-     *   "is_initial": true,
-     *   "subscription_id": 10
+     *   "product": "stellar_vpn",
+     *   "source": "web_checkout",
+     *   "gateway": "stripe",
+     *   "is_recurring": false,
+     *   "session_token": "abc123...",      // web
+     *   "install_token": null              // apps (optional)
      * }
-     *
-     * Billing decides what to send. This service only cares about:
-     * - which affiliate should get credit
-     * - what is the order amount / currency
-     * - is this initial or recurring
      */
-    public function handleOrderPaid(Request $request): Response
+    public function handleOrderPaid(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'event'           => 'required|string',     // e.g. "order.paid"
+            // Optional generic marker
+            'event'           => 'sometimes|string',
+
+            // Core billing identifiers
             'order_id'        => 'required|integer',
             'user_id'         => 'nullable|integer',
-            'external_user_id'=> 'nullable|integer',
-            'affiliate_id'    => 'nullable|integer',
-            'affiliate_code'  => 'nullable|string',
-            'product'         => 'required|string',
-            'plan'            => 'required|string',
+            'subscription_id' => 'nullable|integer',
+
+            // Money and product
             'amount'          => 'required|numeric',
             'currency'        => 'required|string|size:3',
-            'is_initial'      => 'required|boolean',
-            'subscription_id' => 'nullable|integer',
+            'product'         => 'required|string',
+            'source'          => 'nullable|string|max:100',
+            'gateway'         => 'nullable|string|max:100',
+
+            // Recurrence + attribution
+            'is_recurring'    => 'required|boolean',
+            'session_token'   => 'nullable|string|max:255',
+            'install_token'   => 'nullable|string|max:255',
         ]);
 
-        // Resolve which affiliate gets the commission
+        $isRecurring = (bool) $data['is_recurring'];
+        $type        = $isRecurring ? 'recurring' : 'initial';
+
+        // Commission rates from env
+        $initialRate   = (float) env('AFFILIATE_INITIAL_RATE', 1.0);   // 100% first
+        $recurringRate = (float) env('AFFILIATE_RECURRING_RATE', 0.60); // 60% recurring
+
+        $rate = $isRecurring ? $recurringRate : $initialRate;
+
+        // Pure v2 attribution: install_token → session_token
         $affiliateId = $this->resolveAffiliateId($data);
 
         if (! $affiliateId) {
-            // No affiliate found for this order. We just log and return 200 OK.
             Log::info('[AffiliateEvent] No affiliate found for order', [
-                'order_id' => $data['order_id'],
-                'user_id'  => $data['user_id'] ?? null,
+                'order_id'      => $data['order_id'],
+                'user_id'       => $data['user_id'] ?? null,
+                'session_token' => $data['session_token'] ?? null,
+                'install_token' => $data['install_token'] ?? null,
             ]);
 
             return response()->json([
@@ -70,19 +82,9 @@ class AffiliateEventController extends Controller
             ]);
         }
 
-        $type = $data['is_initial'] ? 'initial' : 'recurring';
-
-        // Commission rates can be configured via env:
-        // AFFILIATE_INITIAL_RATE (default 1.0)
-        // AFFILIATE_RECURRING_RATE (default 0.60)
-        $initialRate   = (float) env('AFFILIATE_INITIAL_RATE', 1.0);
-        $recurringRate = (float) env('AFFILIATE_RECURRING_RATE', 0.60);
-
-        $rate = $data['is_initial'] ? $initialRate : $recurringRate;
-
         $commissionAmount = round($data['amount'] * $rate, 2);
 
-        // Idempotency: do not create duplicate commissions for same order + type
+        // Idempotency: avoid duplicate commission for same order + type
         $existing = AffiliateCommission::where('affiliate_id', $affiliateId)
             ->where('order_id', $data['order_id'])
             ->where('type', $type)
@@ -100,10 +102,10 @@ class AffiliateEventController extends Controller
                 'commission_id'  => $existing->id,
                 'affiliate_id'   => $affiliateId,
                 'order_id'       => $data['order_id'],
+                'type'           => $type,
             ]);
         }
 
-        // Refund window (days) before commission is eligible for payout
         $refundDays = (int) env('AFFILIATE_REFUND_DAYS', 14);
 
         $commission = AffiliateCommission::create([
@@ -144,33 +146,30 @@ class AffiliateEventController extends Controller
      * Resolve affiliate_id from incoming event data.
      *
      * Priority:
-     *  1) explicit affiliate_id from billing
-     *  2) affiliate_code (public_code)
-     *  3) external_user_id match on affiliates.external_user_id
+     *  1) install_token (apps)
+     *  2) session_token (web)
      */
     protected function resolveAffiliateId(array $data): ?int
     {
-        // 1) If billing sends affiliate_id directly, we trust that
-        if (! empty($data['affiliate_id'])) {
-            $affiliate = Affiliate::find($data['affiliate_id']);
-            if ($affiliate) {
-                return $affiliate->id;
+        // 1) install_token attribution (apps)
+        if (! empty($data['install_token'])) {
+            $install = AffiliateInstallToken::where('install_token', $data['install_token'])
+                ->latest()
+                ->first();
+
+            if ($install && $install->affiliate_id) {
+                return (int) $install->affiliate_id;
             }
         }
 
-        // 2) If billing sends affiliate_code (e.g. "123456")
-        if (! empty($data['affiliate_code'])) {
-            $affiliate = Affiliate::where('public_code', $data['affiliate_code'])->first();
-            if ($affiliate) {
-                return $affiliate->id;
-            }
-        }
+        // 2) session_token attribution (web flows)
+        if (! empty($data['session_token'])) {
+            $session = AffiliateSession::where('session_token', $data['session_token'])
+                ->where('expires_at', '>', now())
+                ->first();
 
-        // 3) If billing sends external_user_id
-        if (! empty($data['external_user_id'])) {
-            $affiliate = Affiliate::where('external_user_id', $data['external_user_id'])->first();
-            if ($affiliate) {
-                return $affiliate->id;
+            if ($session && $session->affiliate_id) {
+                return (int) $session->affiliate_id;
             }
         }
 
