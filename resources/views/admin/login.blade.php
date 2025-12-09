@@ -26,7 +26,7 @@
             </div>
         @endif
 
-        <form method="POST" action="{{ route('admin.login.post') }}" class="space-y-3">
+        <form method="POST" action="{{ route('affiliate.login.post') }}" class="space-y-3">
             @csrf
 
             <div class="space-y-1">
@@ -58,7 +58,6 @@
                     <input type="checkbox" name="remember" class="h-3 w-3 rounded border-slate-600 bg-slate-900">
                     <span>Remember me</span>
                 </label>
-                <span class="text-slate-500 text-[10px]">Swiss IPs are monitored.</span>
             </div>
 
             <button

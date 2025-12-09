@@ -20,8 +20,8 @@ Route::post('/affiliate/login', [AuthController::class, 'login'])
 Route::post('/affiliate/logout', [AuthController::class, 'logout'])
     ->name('affiliate.logout');
 
-// Protected affiliate portal (requires auth)
-Route::middleware(['auth'])
+// Protected affiliate portal (requires web guard)
+Route::middleware(['auth:web'])
     ->prefix('affiliate')
     ->group(function () {
         Route::get('/dashboard', [AffiliatePortalController::class, 'dashboard'])
@@ -39,7 +39,6 @@ Route::middleware(['auth'])
         Route::get('/settings', [AffiliatePortalController::class, 'settings'])
             ->name('affiliate.settings');
 
-        // Internal overview pages
         Route::get('/clicks', [AffiliatePortalController::class, 'clicks'])
             ->name('affiliate.clicks');
 
@@ -51,6 +50,5 @@ Route::middleware(['auth'])
     });
 
 // Public affiliate tracking – no /api, no /v1
-// Example: https://stellarafi.com/r/AFF123?src=youtube&campaign=review_oct&product=vpn
 Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
     ->name('affiliate.track.public');

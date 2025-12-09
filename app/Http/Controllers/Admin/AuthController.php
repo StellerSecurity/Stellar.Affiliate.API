@@ -10,9 +10,8 @@ class AuthController extends Controller
 {
     public function showLoginForm()
     {
-        // If already logged in, redirect to affiliate dashboard
-        if (Auth::check()) {
-            return redirect()->route('admin.affiliate.dashboard');
+        if (Auth::guard('web')->check()) {
+            return redirect()->route('affiliate.dashboard');
         }
 
         return view('admin.login');
@@ -25,11 +24,10 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        // Normal web guard
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
+        if (Auth::guard('web')->attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
 
-            return redirect()->intended(route('admin.affiliate.dashboard'));
+            return redirect()->intended(route('affiliate.dashboard'));
         }
 
         return back()
@@ -39,11 +37,11 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        Auth::logout();
+        Auth::guard('web')->logout();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('admin.login');
+        return redirect()->route('affiliate.login');
     }
 }

@@ -15,13 +15,6 @@ use App\Http\Controllers\Api\AffiliatePayoutController;
 |--------------------------------------------------------------------------
 */
 
-// 🔓 Public endpoints (no auth)
-Route::prefix('v1')->group(function () {
-    // Affiliate login (email + password → api token)
-    Route::post('/auth/login', [LoginController::class, 'login'])
-        ->name('affiliate.auth.login');
-
-});
 
 // 🔐 Internal service-to-service (Basic Auth with API_USERNAME / API_PASSWORD)
 Route::prefix('v1')
@@ -36,30 +29,4 @@ Route::prefix('v1')
         )->name('affiliate.events.order_paid');
     });
 
-// 🔐 Affiliate portal (Angular) – Bearer token auth (AffiliateTokenAuth)
-Route::prefix('v1/affiliate')
-    ->middleware('affiliate.token')
-    ->group(function () {
-        // Dashboard overview
-        // GET /api/v1/affiliate/dashboard
-        Route::get('/dashboard', [AffiliateDashboardController::class, 'overview'])
-            ->name('affiliate.dashboard');
 
-        // Campaigns
-        // GET  /api/v1/affiliate/campaigns
-        // POST /api/v1/affiliate/campaigns
-        Route::get('/campaigns', [AffiliateCampaignController::class, 'index'])
-            ->name('affiliate.campaigns.index');
-
-        Route::post('/campaigns', [AffiliateCampaignController::class, 'store'])
-            ->name('affiliate.campaigns.store');
-
-        // Payouts
-        // GET /api/v1/affiliate/payouts/summary
-        // GET /api/v1/affiliate/payouts/history
-        Route::get('/payouts/summary', [AffiliatePayoutController::class, 'summary'])
-            ->name('affiliate.payouts.summary');
-
-        Route::get('/payouts/history', [AffiliatePayoutController::class, 'history'])
-            ->name('affiliate.payouts.history');
-    });

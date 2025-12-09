@@ -133,11 +133,11 @@
                 <div class="rounded-3xl bg-slate-900/70 border border-slate-800 p-4">
                     <p class="text-[11px] font-medium text-slate-300">Clicks → Initial sales (30d)</p>
                     <p class="mt-1 text-xl font-semibold">
-                        {{ $clicksLast30 }} → {{ $initialSalesLast30 }}
+                        {{ $clicksLast30 }} → {{ $salesLast30 }}
                     </p>
                     <p class="mt-2 text-[10px] text-slate-400">
                         @php
-                            $cr = $clicksLast30 > 0 ? round(($initialSalesLast30 / max($clicksLast30,1)) * 100, 1) : 0;
+                            $cr = $clicksLast30 > 0 ? round(($salesLast30 / max($clicksLast30,1)) * 100, 1) : 0;
                         @endphp
                         {{ $cr }}% signup rate
                     </p>
