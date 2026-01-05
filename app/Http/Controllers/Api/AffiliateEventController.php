@@ -53,7 +53,7 @@ class AffiliateEventController extends Controller
             'session_token'   => 'nullable|string|max:255',
             'install_token'   => 'nullable|string|max:255',
 
-            'external_payment_id'=> 'required|string|max:255'
+            'external_payment_id'=> 'nullable|string|max:255'
         ]);
 
 
