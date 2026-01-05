@@ -37,9 +37,9 @@ class AffiliateEventController extends Controller
         $data = $request->validate([
 
             // Core billing identifiers
-            'order_id'        => 'required|integer',
-            'user_id'         => 'nullable|integer',
-            'subscription_id' => 'nullable|integer',
+            'order_id'        => 'required',
+            'user_id'         => 'nullable',
+            'subscription_id' => 'nullable',
 
             // Money and product
             'amount'          => 'required|numeric',
