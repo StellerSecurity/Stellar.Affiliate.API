@@ -60,6 +60,20 @@
                 </div>
 
                 <div class="space-y-1">
+                    <label class="text-slate-300">Email (optional, used for linking)</label>
+                    <input
+                        type="email"
+                        name="email"
+                        value="{{ old('email') }}"
+                        placeholder="publisher@example.com"
+                        class="w-full rounded-2xl bg-slate-950 border border-slate-700 px-3 py-2 text-[11px] text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    @error('email')
+                    <p class="text-[10px] text-red-400">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <div class="space-y-1">
                     <label class="text-slate-300">Public code (optional)</label>
                     <input
                         type="text"
@@ -142,6 +156,7 @@
                                         <p class="font-medium">
                                             {{ $affiliate->name ?? 'Unknown' }}
                                         </p>
+                                        <p class="text-[10px] text-slate-400">{{ $affiliate->email ?? '' }}</p>
                                     </div>
                                 </div>
                             </td>
@@ -154,7 +169,7 @@
                                 {{ $affiliate->base_redirect_url ?? 'Uses global default' }}
                             </td>
                             <td class="px-3 py-2">
-                                @if($affiliate->is_active ?? true)
+                                @if(($affiliate->status ?? 'active') === 'active')
                                     <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-300 border border-emerald-500/40">
                                         <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                                         Active

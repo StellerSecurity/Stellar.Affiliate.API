@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use app\Models\Affiliate;
+use App\Models\Affiliate;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
@@ -12,6 +12,7 @@ class AffiliateTokenAuth
 {
     /**
      * Authenticate affiliate using Bearer token stored on users.api_token.
+     * Also auto-links Affiliate.external_user_id via email fallback if needed.
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -29,15 +30,27 @@ class AffiliateTokenAuth
 
         $hashed = hash('sha256', $token);
 
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = User::where('api_token', $hashed)->first();
 
         if (! $user) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
 
-        /** @var \app\Models\Affiliate|null $affiliate */
+        // 1) Normal path: already linked
         $affiliate = Affiliate::where('external_user_id', $user->id)->first();
+
+        // 2) Fallback: match by email and auto-link
+        if (! $affiliate && isset($user->email) && $user->email) {
+            $affiliate = Affiliate::whereNull('external_user_id')
+                ->where('email', $user->email)
+                ->first();
+
+            if ($affiliate) {
+                $affiliate->external_user_id = (int) $user->id;
+                $affiliate->save();
+            }
+        }
 
         if (! $affiliate) {
             return response()->json(['message' => 'Affiliate not found for user'], 403);

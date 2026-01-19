@@ -45,4 +45,9 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    public function affiliate()
+    {
+        return $this->hasOne(\App\Models\Affiliate::class, 'external_user_id', 'id');
+    }
 }

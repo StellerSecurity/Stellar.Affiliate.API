@@ -10,24 +10,27 @@ class AffiliateCampaignController extends Controller
 {
     public function index(Request $request)
     {
-        // Later: resolve affiliate_id from auth
-        $affiliateId = $request->user()?->affiliate_id ?? null;
+        $affiliate = $request->attributes->get('affiliate');
 
-        $query = AffiliateCampaign::query();
-
-        if ($affiliateId) {
-            $query->where('affiliate_id', $affiliateId);
+        if (! $affiliate || ! isset($affiliate->id)) {
+            return response()->json(['message' => 'Affiliate not resolved'], 403);
         }
 
-        $campaigns = $query->orderByDesc('id')->paginate(20);
+        $campaigns = AffiliateCampaign::query()
+            ->where('affiliate_id', (int) $affiliate->id)
+            ->orderByDesc('id')
+            ->paginate(20);
 
         return response()->json($campaigns);
     }
 
     public function store(Request $request)
     {
-        // Later: resolve affiliate_id from auth
-        $affiliateId = $request->user()?->affiliate_id ?? null;
+        $affiliate = $request->attributes->get('affiliate');
+
+        if (! $affiliate || ! isset($affiliate->id)) {
+            return response()->json(['message' => 'Affiliate not resolved'], 403);
+        }
 
         $data = $request->validate([
             'name'          => 'required|string|max:255',
@@ -37,12 +40,7 @@ class AffiliateCampaignController extends Controller
             'country_focus' => 'nullable|string|max:2',
         ]);
 
-        if (! $affiliateId) {
-            // You will later replace this with proper auth / token handling
-            return response()->json(['message' => 'Affiliate not resolved'], 400);
-        }
-
-        $data['affiliate_id'] = $affiliateId;
+        $data['affiliate_id'] = (int) $affiliate->id;
 
         $campaign = AffiliateCampaign::create($data);
 

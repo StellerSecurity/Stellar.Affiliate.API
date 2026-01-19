@@ -6,13 +6,13 @@ use App\Http\Controllers\AffiliatePortalController;
 use App\Http\Controllers\Admin\AuthController;
 use Illuminate\Support\Facades\Artisan;
 
-
 /*
 |--------------------------------------------------------------------------
 | Public Root
 |--------------------------------------------------------------------------
 */
 Route::get('/', function () {
+
     // Clear all relevant caches
     Artisan::call('optimize:clear');   // clears config, route, view, cache
     Artisan::call('cache:clear');      // app cache
@@ -38,8 +38,6 @@ Route::get('/', function () {
 Route::get('/affiliate/login', [AuthController::class, 'showLoginForm'])
     ->name('affiliate.login');
 
-
-
 Route::post('/affiliate/login', [AuthController::class, 'login'])
     ->name('affiliate.login.post');
 
@@ -54,11 +52,15 @@ Route::post('/affiliate/logout', [AuthController::class, 'logout'])
 |--------------------------------------------------------------------------
 | Protected Affiliate Portal (requires Login)
 |--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| - auth:web ensures session login
+| - resolve.affiliate attaches current affiliate to Request attributes
+|
 */
-Route::middleware(['auth:web'])
+Route::middleware(['auth:web', 'resolve.affiliate'])
     ->prefix('affiliate')
     ->group(function () {
-
 
         // Dashboard
         Route::get('/dashboard', [AffiliatePortalController::class, 'dashboard'])
@@ -68,12 +70,12 @@ Route::middleware(['auth:web'])
         Route::get('/sales', [AffiliatePortalController::class, 'sales'])
             ->name('affiliate.sales');
 
+        // Campaigns
         Route::get('/campaigns', [AffiliatePortalController::class, 'campaignsIndex'])
             ->name('affiliate.campaigns.index');
 
         Route::post('/campaigns', [AffiliatePortalController::class, 'campaignsStore'])
             ->name('affiliate.campaigns.store');
-
 
         // Payouts
         Route::get('/payouts', [AffiliatePortalController::class, 'payouts'])
@@ -99,7 +101,7 @@ Route::middleware(['auth:web'])
 
         /*
         |--------------------------------------------------------------------------
-        | NEW: Affiliate Management (list + create)
+        | Affiliate Management (admin-style)
         |--------------------------------------------------------------------------
         */
         Route::get('/affiliates', [AffiliatePortalController::class, 'affiliatesIndex'])

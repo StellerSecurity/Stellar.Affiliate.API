@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 
 class AffiliateDashboardController extends Controller
 {
+
+
     public function overview(Request $request): JsonResponse
     {
         $affiliate = $request->attributes->get('affiliate');
