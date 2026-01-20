@@ -11,24 +11,18 @@ class Affiliate extends Model
 
     protected $fillable = [
         'external_user_id',
+        'name',
+        'email',
         'public_code',
         'status',
         'country',
         'payout_currency',
         'base_redirect_url',
-        'name',
-        'email',
     ];
 
     protected $casts = [
         'external_user_id' => 'integer',
     ];
-
-    // Relationships
-    public function affiliate()
-    {
-        return $this->belongsTo(Affiliate::class);
-    }
 
     public function campaigns()
     {

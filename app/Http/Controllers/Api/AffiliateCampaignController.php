@@ -16,6 +16,7 @@ class AffiliateCampaignController extends Controller
             return response()->json(['message' => 'Affiliate not resolved'], 403);
         }
 
+
         $campaigns = AffiliateCampaign::query()
             ->where('affiliate_id', (int) $affiliate->id)
             ->orderByDesc('id')

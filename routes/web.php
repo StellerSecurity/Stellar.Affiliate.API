@@ -1,5 +1,7 @@
 <?php
 
+use app\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AffiliateTrackingController;
 use App\Http\Controllers\AffiliatePortalController;
@@ -12,6 +14,7 @@ use Illuminate\Support\Facades\Artisan;
 |--------------------------------------------------------------------------
 */
 Route::get('/', function () {
+
 
     // Clear all relevant caches
     Artisan::call('optimize:clear');   // clears config, route, view, cache
@@ -122,3 +125,5 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
 */
 Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
     ->name('affiliate.track.public');
+
+

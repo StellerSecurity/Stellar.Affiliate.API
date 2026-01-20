@@ -21,6 +21,7 @@ class AffiliateDashboardController extends Controller
             return response()->json(['message' => 'Affiliate not resolved'], 400);
         }
 
+
         $affiliateId = $affiliate->id;
 
         // Example basic stats – du kan udbygge senere

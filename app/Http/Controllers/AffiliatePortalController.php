@@ -17,43 +17,70 @@ class AffiliatePortalController extends Controller
     private function resolvedAffiliate(Request $request): ?Affiliate
     {
         $affiliate = $request->attributes->get('affiliate');
-        return $affiliate instanceof Affiliate ? $affiliate : null;
+
+        if ($affiliate instanceof Affiliate) {
+            return $affiliate;
+        }
+
+        $user = $request->user();
+        if (! $user) {
+            return null;
+        }
+
+        // Try link by external_user_id
+        $affiliate = Affiliate::query()
+            ->where('external_user_id', $user->id)
+            ->first();
+
+        if ($affiliate) {
+            $request->attributes->set('affiliate', $affiliate);
+            return $affiliate;
+        }
+
+        // Fallback: match by email only if not linked yet, then auto-link
+        $affiliate = Affiliate::query()
+            ->whereNull('external_user_id')
+            ->where('email', $user->email)
+            ->first();
+
+        if ($affiliate) {
+            $affiliate->external_user_id = (int) $user->id;
+            $affiliate->save();
+
+            $request->attributes->set('affiliate', $affiliate);
+            return $affiliate;
+        }
+
+        return null;
     }
 
+    private function isAdmin(Request $request): bool
+    {
+        $user = $request->user();
+        if (! $user) {
+            return false;
+        }
+
+        // Simple admin allowlist via env
+        $emails = array_filter(array_map('trim', explode(',', (string) env('AFFILIATE_ADMIN_EMAILS', ''))));
+
+        return in_array((string) $user->email, $emails, true);
+    }
+
+    /**
+     * If no affiliate and not admin -> NO DATA (zeros/empty lists) + show CTA in UI.
+     */
     public function dashboard(Request $request)
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
 
-        // Default: system-wide
-        $totalAffiliates  = Affiliate::count();
-        $totalClicks      = AffiliateClick::count();
-        $totalSessions    = AffiliateSession::count();
-        $totalEarnings    = AffiliateCommission::sum('amount');
+        $needsAffiliateSetup = false;
 
-        $clicksLast30     = AffiliateClick::where('created_at', '>=', now()->subDays(30))->count();
-        $salesLast30      = AffiliateCommission::where('created_at', '>=', now()->subDays(30))->count();
-
-        $pendingPayouts   = AffiliatePayout::where('status', 'pending')->sum('amount');
-        $paidPayouts      = AffiliatePayout::where('status', 'paid')->sum('amount');
-
-        $latestAffiliates = Affiliate::latest()->take(5)->get();
-
-        $latestSales      = AffiliateCommission::with('affiliate')
-            ->latest()
-            ->take(10)
-            ->get();
-
-        $recentPayouts    = AffiliatePayout::with('affiliate')
-            ->latest()
-            ->take(5)
-            ->get();
-
-        // If an affiliate is resolved, scope everything to that affiliate (privacy > vanity metrics)
         if ($currentAffiliate) {
             $aid = (int) $currentAffiliate->id;
 
             $totalAffiliates = 1;
-
             $totalClicks = AffiliateClick::where('affiliate_id', $aid)->count();
             $totalSessions = AffiliateSession::where('affiliate_id', $aid)->count();
             $totalEarnings = AffiliateCommission::where('affiliate_id', $aid)->sum('amount');
@@ -87,7 +114,83 @@ class AffiliatePortalController extends Controller
                 ->latest()
                 ->take(5)
                 ->get();
+
+            return view('affiliate-dashboard', compact(
+                'totalAffiliates',
+                'totalClicks',
+                'totalSessions',
+                'totalEarnings',
+                'clicksLast30',
+                'salesLast30',
+                'pendingPayouts',
+                'paidPayouts',
+                'latestAffiliates',
+                'latestSales',
+                'recentPayouts',
+                'currentAffiliate',
+                'needsAffiliateSetup'
+            ));
         }
+
+        if ($admin) {
+            // Admin: system-wide
+            $totalAffiliates  = Affiliate::count();
+            $totalClicks      = AffiliateClick::count();
+            $totalSessions    = AffiliateSession::count();
+            $totalEarnings    = AffiliateCommission::sum('amount');
+
+            $clicksLast30     = AffiliateClick::where('created_at', '>=', now()->subDays(30))->count();
+            $salesLast30      = AffiliateCommission::where('created_at', '>=', now()->subDays(30))->count();
+
+            $pendingPayouts   = AffiliatePayout::where('status', 'pending')->sum('amount');
+            $paidPayouts      = AffiliatePayout::where('status', 'paid')->sum('amount');
+
+            $latestAffiliates = Affiliate::latest()->take(5)->get();
+
+            $latestSales      = AffiliateCommission::with('affiliate')
+                ->latest()
+                ->take(10)
+                ->get();
+
+            $recentPayouts    = AffiliatePayout::with('affiliate')
+                ->latest()
+                ->take(5)
+                ->get();
+
+            return view('affiliate-dashboard', compact(
+                'totalAffiliates',
+                'totalClicks',
+                'totalSessions',
+                'totalEarnings',
+                'clicksLast30',
+                'salesLast30',
+                'pendingPayouts',
+                'paidPayouts',
+                'latestAffiliates',
+                'latestSales',
+                'recentPayouts',
+                'currentAffiliate',
+                'needsAffiliateSetup'
+            ));
+        }
+
+        // Non-affiliate user: show NOTHING (privacy)
+        $needsAffiliateSetup = true;
+
+        $totalAffiliates = 0;
+        $totalClicks = 0;
+        $totalSessions = 0;
+        $totalEarnings = 0;
+
+        $clicksLast30 = 0;
+        $salesLast30 = 0;
+
+        $pendingPayouts = 0;
+        $paidPayouts = 0;
+
+        $latestAffiliates = collect();
+        $latestSales = collect();
+        $recentPayouts = collect();
 
         return view('affiliate-dashboard', compact(
             'totalAffiliates',
@@ -101,20 +204,33 @@ class AffiliatePortalController extends Controller
             'latestAffiliates',
             'latestSales',
             'recentPayouts',
-            'currentAffiliate'
+            'currentAffiliate',
+            'needsAffiliateSetup'
         ));
     }
 
+    /**
+     * Affiliates page:
+     * - Admin sees all
+     * - Normal user sees only their affiliate (or empty)
+     */
     public function affiliatesIndex(Request $request)
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
         $search = $request->query('q');
 
         $query = Affiliate::query()->orderByDesc('created_at');
 
-        // If affiliate user, only show self
-        if ($currentAffiliate) {
-            $query->where('id', $currentAffiliate->id);
+        if (! $admin) {
+            // Non-admin: only own affiliate or none
+            if ($currentAffiliate) {
+                $query->where('id', (int) $currentAffiliate->id);
+            } else {
+                // Return empty result set safely
+                $query->whereRaw('1 = 0');
+            }
         }
 
         if ($search) {
@@ -130,23 +246,97 @@ class AffiliatePortalController extends Controller
         return view('affiliate-affiliates', [
             'affiliates' => $affiliates,
             'search'     => $search,
+            'currentAffiliate' => $currentAffiliate,
+            'isAdmin' => $admin,
         ]);
+    }
+
+    /**
+     * Create affiliate:
+     * - Normal user creates ONE affiliate linked to themselves (external_user_id = auth user id)
+     * - Admin can create unlinked affiliate by email (optional)
+     */
+    public function affiliatesStore(Request $request)
+    {
+        $admin = $this->isAdmin($request);
+        $user = $request->user();
+
+        if (! $user) {
+            abort(401, 'Not authenticated');
+        }
+
+        // If non-admin already has an affiliate, stop.
+        $existing = Affiliate::where('external_user_id', $user->id)->first();
+        if (! $admin && $existing) {
+            return redirect()
+                ->route('affiliate.affiliates.index')
+                ->with('status', 'Affiliate already exists for this user.');
+        }
+
+        $data = $request->validate([
+            'name'              => ['required', 'string', 'max:255'],
+            'email'             => [$admin ? 'nullable' : 'nullable', 'email', 'max:255'],
+            'public_code'       => ['nullable', 'string', 'max:50', 'unique:affiliates,public_code'],
+            'base_redirect_url' => ['nullable', 'string', 'max:2048'],
+            'is_active'         => ['nullable', 'boolean'],
+        ]);
+
+        if (empty($data['public_code'])) {
+            $data['public_code'] = strtoupper(Str::random(8));
+        }
+
+        $isActive = $request->boolean('is_active', true);
+
+        $affiliate = new Affiliate();
+        $affiliate->name = $data['name'];
+
+        // Email rules:
+        // - If normal user: always prefer auth user email
+        // - If admin: allow provided email (for later linking)
+        if (! $admin) {
+            $affiliate->email = (string) $user->email;
+            $affiliate->external_user_id = (int) $user->id;
+        } else {
+            $affiliate->email = $data['email'] ?? null;
+
+            // If admin provides an email that matches a user, link it
+            if (! empty($affiliate->email)) {
+                $linkedUserId = \App\Models\User::where('email', $affiliate->email)->value('id');
+                $affiliate->external_user_id = $linkedUserId ? (int) $linkedUserId : null;
+            }
+        }
+
+        $affiliate->public_code = $data['public_code'];
+        $affiliate->base_redirect_url = $data['base_redirect_url'] ?? null;
+        $affiliate->status = $isActive ? 'active' : 'banned';
+
+        $affiliate->save();
+
+        // Attach to request for this session navigation
+        $request->attributes->set('affiliate', $affiliate);
+
+        return redirect()
+            ->route('affiliate.dashboard')
+            ->with('status', 'Affiliate created.');
     }
 
     public function campaignsIndex(Request $request)
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
         $search = $request->query('q');
 
-        $query = AffiliateCampaign::with('affiliate')
-            ->orderByDesc('created_at');
+        $query = AffiliateCampaign::with('affiliate')->orderByDesc('created_at');
 
         if ($currentAffiliate) {
             $query->where('affiliate_id', (int) $currentAffiliate->id);
+        } elseif (! $admin) {
+            // No affiliate and not admin => empty
+            $query->whereRaw('1 = 0');
         }
 
         if ($search) {
-            // IMPORTANT: group OR conditions, otherwise you leak other affiliates
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('source', 'like', "%{$search}%")
@@ -158,28 +348,37 @@ class AffiliatePortalController extends Controller
 
         $campaigns = $query->paginate(25)->withQueryString();
 
-        // If affiliate user, only show self in dropdown
-        if ($currentAffiliate) {
-            $affiliates = Affiliate::where('id', $currentAffiliate->id)->get(['id', 'public_code']);
-        } else {
+        // Dropdown affiliates
+        if ($admin) {
             $affiliates = Affiliate::orderBy('public_code')->get(['id', 'public_code']);
+        } elseif ($currentAffiliate) {
+            $affiliates = Affiliate::where('id', (int) $currentAffiliate->id)->get(['id', 'public_code']);
+        } else {
+            $affiliates = collect();
         }
 
         return view('affiliate-campaigns', [
             'campaigns'  => $campaigns,
             'affiliates' => $affiliates,
             'search'     => $search,
+            'currentAffiliate' => $currentAffiliate,
+            'isAdmin' => $admin,
         ]);
     }
 
     public function campaignsStore(Request $request)
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
+        if (! $currentAffiliate && ! $admin) {
+            return redirect()
+                ->route('affiliate.affiliates.index')
+                ->with('status', 'Create your affiliate first.');
+        }
 
         $rules = [
-            'affiliate_id' => $currentAffiliate
-                ? ['nullable']
-                : ['required', 'exists:affiliates,id'],
+            'affiliate_id' => $admin ? ['required', 'exists:affiliates,id'] : ['nullable'],
             'name'         => ['required', 'string', 'max:255'],
             'source'       => ['nullable', 'string', 'max:50'],
             'sub_id1'      => ['nullable', 'string', 'max:255'],
@@ -188,7 +387,6 @@ class AffiliatePortalController extends Controller
 
         $data = $request->validate($rules);
 
-        // If affiliate user, force affiliate_id to self (server-side, always)
         if ($currentAffiliate) {
             $data['affiliate_id'] = (int) $currentAffiliate->id;
         }
@@ -200,56 +398,28 @@ class AffiliatePortalController extends Controller
             ->with('status', 'Campaign created successfully!');
     }
 
-    public function affiliatesStore(Request $request)
-    {
-        $data = $request->validate([
-            'name'              => ['required', 'string', 'max:255'],
-            'email'             => ['nullable', 'email', 'max:255'],
-            'public_code'       => ['nullable', 'string', 'max:50', 'unique:affiliates,public_code'],
-            'base_redirect_url' => ['nullable', 'string', 'max:2048'],
-            'is_active'         => ['nullable', 'boolean'],
-        ]);
-
-        if (empty($data['public_code'])) {
-            $data['public_code'] = strtoupper(\Illuminate\Support\Str::random(8));
-        }
-
-        // Map "is_active" to your existing status enum behavior (minimal, keeps default active)
-        // If you truly use status, you should save status instead of is_active.
-        // We keep your logic but don't pretend is_active exists in DB.
-        $isActive = $request->boolean('is_active', true);
-        $data['status'] = $isActive ? 'active' : 'banned';
-
-        // --- THIS IS THE IMPORTANT PART ---
-        // If email matches an existing user, link to that user.
-        // Otherwise, if you're logged in, link to the current user (self-create).
-        $linkedUserId = null;
-
-        if (!empty($data['email'])) {
-            $linkedUserId = \App\Models\User::where('email', $data['email'])->value('id');
-        }
-
-        if (!$linkedUserId && auth()->check()) {
-            $linkedUserId = auth()->id();
-            // If they didn't provide email, at least store current user's email for future matching
-            if (empty($data['email']) && auth()->user()?->email) {
-                $data['email'] = auth()->user()->email;
-            }
-        }
-
-        $data['external_user_id'] = $linkedUserId;
-
-        Affiliate::create($data);
-
-        return redirect()
-            ->route('affiliate.affiliates.index')
-            ->with('status', 'Affiliate created.');
-    }
-
     public function analytics(Request $request)
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
         $from = now()->subDays(30);
+
+        // If no affiliate and not admin => empty analytics
+        if (! $currentAffiliate && ! $admin) {
+            return view('affiliate-analytics', [
+                'clicksLast30' => 0,
+                'sessionsLast30' => 0,
+                'salesLast30' => 0,
+                'revenueLast30' => 0,
+                'conversionRate' => 0,
+                'epc' => 0,
+                'topAffiliates' => collect(),
+                'daily' => [],
+                'currentAffiliate' => null,
+                'isAdmin' => false,
+                'needsAffiliateSetup' => true,
+            ]);
+        }
 
         $clicksQ = AffiliateClick::query()->where('created_at', '>=', $from);
         $sessionsQ = AffiliateSession::query()->where('created_at', '>=', $from);
@@ -339,21 +509,33 @@ class AffiliatePortalController extends Controller
             'epc'            => $epc,
             'topAffiliates'  => $topAffiliates,
             'daily'          => $daily,
+            'currentAffiliate' => $currentAffiliate,
+            'isAdmin' => $admin,
+            'needsAffiliateSetup' => false,
         ]);
-    }
-
-    public function campaigns()
-    {
-        return view('affiliate-campaigns');
     }
 
     public function payouts(Request $request)
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
+        if (! $currentAffiliate && ! $admin) {
+            return view('affiliate-payouts', [
+                'payouts' => collect(),
+                'totalPaid' => 0,
+                'totalPending' => 0,
+                'lastPayout' => null,
+                'currentStatusFilter' => null,
+                'currentAffiliate' => null,
+                'isAdmin' => false,
+                'needsAffiliateSetup' => true,
+            ]);
+        }
+
         $status = $request->query('status');
 
-        $query = AffiliatePayout::with('affiliate')
-            ->orderByDesc('created_at');
+        $query = AffiliatePayout::with('affiliate')->orderByDesc('created_at');
 
         if ($currentAffiliate) {
             $query->where('affiliate_id', (int) $currentAffiliate->id);
@@ -389,22 +571,46 @@ class AffiliatePortalController extends Controller
             'totalPending'         => $totalPending,
             'lastPayout'           => $lastPayout,
             'currentStatusFilter'  => $status,
+            'currentAffiliate' => $currentAffiliate,
+            'isAdmin' => $admin,
+            'needsAffiliateSetup' => false,
         ]);
     }
 
     public function sales(Request $request)
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
 
-        $status        = $request->query('status');
-        $product       = $request->query('product');
-        $affiliateCode = $request->query('affiliate');
+        if (! $currentAffiliate && ! $admin) {
+            return view('affiliate-sales', [
+                'sales' => collect(),
+                'totalCommission' => 0,
+                'totalSalesCount' => 0,
+                'avgCommission' => 0,
+                'last30Commission' => 0,
+                'last30Count' => 0,
+                'currentStatusFilter' => null,
+                'currentProductFilter' => null,
+                'currentAffiliateCode' => null,
+                'currentAffiliate' => null,
+                'isAdmin' => false,
+                'needsAffiliateSetup' => true,
+            ]);
+        }
 
-        $query = AffiliateCommission::with('affiliate')
-            ->orderByDesc('created_at');
+        $status  = $request->query('status');
+        $product = $request->query('product');
+        $affiliateCode = $request->query('affiliate'); // admin-only filter
+
+        $query = AffiliateCommission::with('affiliate')->orderByDesc('created_at');
 
         if ($currentAffiliate) {
             $query->where('affiliate_id', (int) $currentAffiliate->id);
+        } elseif ($admin && $affiliateCode) {
+            $query->whereHas('affiliate', function ($q) use ($affiliateCode) {
+                $q->where('public_code', $affiliateCode);
+            });
         }
 
         if ($status && in_array($status, ['pending', 'approved', 'rejected', 'paid'], true)) {
@@ -413,13 +619,6 @@ class AffiliatePortalController extends Controller
 
         if ($product) {
             $query->where('product', $product);
-        }
-
-        // Only allow affiliateCode filter when NOT in affiliate-scoped mode
-        if (! $currentAffiliate && $affiliateCode) {
-            $query->whereHas('affiliate', function ($q) use ($affiliateCode) {
-                $q->where('public_code', $affiliateCode);
-            });
         }
 
         $sales = $query->paginate(25)->withQueryString();
@@ -431,6 +630,9 @@ class AffiliatePortalController extends Controller
             $aid = (int) $currentAffiliate->id;
             $totalsQ->where('affiliate_id', $aid);
             $last30Q->where('affiliate_id', $aid);
+        } elseif ($admin && $affiliateCode) {
+            $totalsQ->whereHas('affiliate', fn ($q) => $q->where('public_code', $affiliateCode));
+            $last30Q->whereHas('affiliate', fn ($q) => $q->where('public_code', $affiliateCode));
         }
 
         $totalCommission = $totalsQ->sum('amount');
@@ -450,12 +652,37 @@ class AffiliatePortalController extends Controller
             'currentStatusFilter'  => $status,
             'currentProductFilter' => $product,
             'currentAffiliateCode' => $affiliateCode,
+            'currentAffiliate' => $currentAffiliate,
+            'isAdmin' => $admin,
+            'needsAffiliateSetup' => false,
         ]);
     }
 
-    public function settings()
+    public function settings(Request $request)
     {
-        return view('affiliate-settings');
+        $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
+        if (! $currentAffiliate && ! $admin) {
+            // Let them see settings page if you want, but it should be empty / CTA
+            return view('affiliate-settings', [
+                'currentAffiliate' => null,
+                'isAdmin' => false,
+                'needsAffiliateSetup' => true,
+            ]);
+        }
+
+        return view('affiliate-settings', [
+            'currentAffiliate' => $currentAffiliate,
+            'isAdmin' => $admin,
+            'needsAffiliateSetup' => false,
+        ]);
+    }
+
+    // Legacy stubs (keeps old routes from exploding)
+    public function campaigns()
+    {
+        return view('affiliate-campaigns');
     }
 
     public function clicks()
