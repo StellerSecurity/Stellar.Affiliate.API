@@ -38,6 +38,7 @@ class AffiliateTrackingController extends Controller
         $sub2     = $request->query('sub2');
         $product  = $request->query('product'); // e.g. vpn, antivirus, notes
 
+
         // Optional: create or fetch campaign for this affiliate
         $campaignModel = null;
         if ($campaign) {
@@ -83,11 +84,11 @@ class AffiliateTrackingController extends Controller
         $affiliateRedirect = $affiliate->base_redirect_url ?: null;
         $defaultRedirect   = config('affiliate.default_redirect_url', 'https://stellarvpn.org/');
 
-        if($redirect !== null) {
-            $defaultRedirect = $redirect;
-        }
-
         $baseRedirect = $affiliateRedirect ?: $defaultRedirect;
+
+        if($redirect !== null) {
+            $baseRedirect = $redirect;
+        }
 
         // Build final redirect URL with tracking parameters
         $redirectUrl = $this->buildRedirectUrl($baseRedirect, [
