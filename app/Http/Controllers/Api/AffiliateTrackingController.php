@@ -30,6 +30,8 @@ class AffiliateTrackingController extends Controller
             return redirect(config('app.url'));
         }
 
+
+        $redirect = $request->query('redirect');
         $source   = $request->query('src');
         $campaign = $request->query('campaign');
         $sub1     = $request->query('sub1');
@@ -80,6 +82,10 @@ class AffiliateTrackingController extends Controller
         // Choose base redirect
         $affiliateRedirect = $affiliate->base_redirect_url ?: null;
         $defaultRedirect   = config('affiliate.default_redirect_url', 'https://stellarvpn.org/');
+
+        if($redirect !== null) {
+            $defaultRedirect = $redirect;
+        }
 
         $baseRedirect = $affiliateRedirect ?: $defaultRedirect;
 
