@@ -168,7 +168,7 @@
                                 'campaign' => $camp->name,
                                 'sub1'     => $camp->sub_id1,
                                 'sub2'     => $camp->sub_id2,
-                                'product'  => 'vpn',
+                                'product'  => 'DIGITAL Product',
                             ];
 
                             $filtered = array_filter($query, fn($v) => !is_null($v) && $v !== '');
