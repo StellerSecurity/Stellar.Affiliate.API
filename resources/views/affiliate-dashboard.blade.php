@@ -63,6 +63,8 @@
     <div class="space-y-3">
         <div class="rounded-3xl border border-slate-800 bg-slate-900/60 p-4">
             <p class="text-[11px] font-semibold text-slate-200">Payout overview</p>
+            <p>                * This data can take some days to update.
+            </p>
             <p class="mt-1 text-xl font-semibold text-emerald-400">
                 Available: €{{ number_format($pendingPayouts, 2) }}
             </p>
