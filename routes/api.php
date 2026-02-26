@@ -15,6 +15,17 @@ use App\Http\Controllers\Api\AffiliatePayoutController;
 |--------------------------------------------------------------------------
 */
 
+// Public affiliate auth (token-based)
+Route::prefix('v1')->group(function () {
+    Route::post('/auth/register', [LoginController::class, 'register'])
+        ->middleware('throttle:10,1')
+        ->name('affiliate.auth.register');
+
+    Route::post('/auth/login', [LoginController::class, 'login'])
+        ->middleware('throttle:20,1')
+        ->name('affiliate.auth.login');
+});
+
 
 // 🔐 Internal service-to-service (Basic Auth with API_USERNAME / API_PASSWORD)
 Route::prefix('v1')

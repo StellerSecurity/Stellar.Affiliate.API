@@ -11,6 +11,54 @@ use Symfony\Component\HttpFoundation\Response;
 
 class LoginController extends Controller
 {
+    private function issueTokenForUser(User $user): string
+    {
+        $token = Str::random(60);
+        $user->api_token = hash('sha256', $token);
+        $user->save();
+
+        // This is the token the frontend should store (NOT the hashed one)
+        return $token;
+    }
+
+    /**
+     * Register a new user and issue an API token.
+     *
+     * Request:
+     *  POST /api/v1/auth/register
+     *  {
+     *    "name": "Jane Doe",
+     *    "email": "affiliate@example.com",
+     *    "password": "very-long-secret",
+     *    "password_confirmation": "very-long-secret"
+     *  }
+     */
+    public function register(Request $request): Response
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255|unique:users,email',
+            'password' => 'required|string|min:12|confirmed',
+        ]);
+
+        $user = User::create([
+            'name' => $data['name'],
+            'email' => mb_strtolower($data['email']),
+            'password' => Hash::make($data['password']),
+        ]);
+
+        $token = $this->issueTokenForUser($user);
+
+        return response()->json([
+            'token' => $token,
+            'user'  => [
+                'id'    => $user->id,
+                'name'  => $user->name,
+                'email' => $user->email,
+            ],
+        ], 201);
+    }
+
     /**
      * Basic email/password login for affiliates.
      *
@@ -43,14 +91,9 @@ class LoginController extends Controller
             ], 401);
         }
 
-        // Generate a simple API token for future use
-        $token = Str::random(60);
-
-        $user->api_token = hash('sha256', $token);
-        $user->save();
+        $token = $this->issueTokenForUser($user);
 
         return response()->json([
-            // This is the token the frontend should store (NOT the hashed one)
             'token' => $token,
             'user'  => [
                 'id'    => $user->id,

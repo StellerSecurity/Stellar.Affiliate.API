@@ -1,7 +1,5 @@
 <?php
 
-use app\Models\User;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AffiliateTrackingController;
 use App\Http\Controllers\AffiliatePortalController;
@@ -30,7 +28,7 @@ Route::get('/', function () {
         '--stop-when-empty' => true,
     ]);
 
-    return 'kk';
+    return redirect('/affiliate/dashboard');
 });
 
 /*
@@ -43,6 +41,13 @@ Route::get('/affiliate/login', [AuthController::class, 'showLoginForm'])
 
 Route::post('/affiliate/login', [AuthController::class, 'login'])
     ->name('affiliate.login.post');
+
+// Self-registration (optional, can be disabled via AFFILIATE_SELF_REGISTER_ENABLED=false)
+Route::get('/affiliate/register', [AuthController::class, 'showRegisterForm'])
+    ->name('affiliate.register');
+
+Route::post('/affiliate/register', [AuthController::class, 'register'])
+    ->name('affiliate.register.post');
 
 Route::get('/login', function () {
     return redirect()->route('affiliate.login');
