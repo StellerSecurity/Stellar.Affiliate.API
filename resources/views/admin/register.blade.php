@@ -61,10 +61,10 @@
                     type="password"
                     name="password"
                     required
-                    minlength="12"
+                    minlength="6"
                     class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
-                <p class="text-[10px] text-slate-500">Minimum 12 characters.</p>
+                <p class="text-[10px] text-slate-500">Minimum 6 characters.</p>
             </div>
 
             <div class="space-y-1">
