@@ -5,7 +5,7 @@
     <title>Stellar Affiliate Register</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ asset('css/stellar-tailwind.css') }}">
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
 <div class="w-full max-w-sm px-4">

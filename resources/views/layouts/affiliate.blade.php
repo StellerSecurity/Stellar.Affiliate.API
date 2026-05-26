@@ -5,29 +5,7 @@
     <title>@yield('title', 'Stellar Affiliate Portal')</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        stellar: {
-                            blue: '#2563ff',
-                            blueDark: '#1b46d8',
-                            navy: '#020826'
-                        }
-                    },
-                    borderRadius: {
-                        '3xl': '1.75rem',
-                        '4xl': '2.25rem'
-                    },
-                    boxShadow: {
-                        'glass': '0 24px 70px rgba(15,23,42,0.45)'
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="{{ asset('css/stellar-tailwind.css') }}">
 </head>
 <body class="bg-slate-950 text-slate-100 antialiased">
 <div class="min-h-screen bg-slate-950 flex flex-col">
