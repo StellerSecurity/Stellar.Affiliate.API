@@ -23,8 +23,8 @@ Route::get('/', function () {
 
     // Process pending jobs once on the default queue
     Artisan::call('queue:work', [
-        '--once' => true,
         '--queue' => 'default',
+        '--max-jobs' => 500,
         '--stop-when-empty' => true,
     ]);
 
