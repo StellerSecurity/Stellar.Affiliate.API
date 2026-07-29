@@ -14,14 +14,14 @@ use Illuminate\Support\Facades\Artisan;
 Route::get('/', function () {
 
     // Process pending jobs once on the default queue
-    Artisan::call('queue:work', [
+  /*  Artisan::call('queue:work', [
         'connection' => 'database',
         '--queue' => 'default',
         '--max-jobs' => 500,
         '--stop-when-empty' => true,
         '--tries' => 3,
         '--timeout' => 120,
-    ]);
+    ]);*/
 
     return redirect('/affiliate/dashboard');
 });
