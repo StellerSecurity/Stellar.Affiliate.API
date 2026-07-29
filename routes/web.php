@@ -13,14 +13,6 @@ use Illuminate\Support\Facades\Artisan;
 */
 Route::get('/', function () {
 
-
-    // Clear all relevant caches
-    Artisan::call('optimize:clear');   // clears config, route, view, cache
-    Artisan::call('cache:clear');      // app cache
-    Artisan::call('route:clear');      // route cache
-    Artisan::call('config:clear');     // config cache
-    Artisan::call('view:clear');       // compiled views
-
     // Process pending jobs once on the default queue
     Artisan::call('queue:work', [
         '--queue' => 'default',
