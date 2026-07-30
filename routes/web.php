@@ -17,9 +17,9 @@ Route::get('/', function () {
     Artisan::call('queue:work', [
         'connection' => 'database',
         '--queue' => 'default',
-        '--max-jobs' => 10,
+        '--max-jobs' => 5,
         '--stop-when-empty' => true,
-        '--tries' => 3,
+        '--tries' => 1,
         '--timeout' => 120,
     ]);
 
