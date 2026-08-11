@@ -18,6 +18,30 @@ final class CommissionMath
         return self::fromScaledInteger($amountMinor * $rateUnits, self::COMMISSION_SCALE);
     }
 
+    /**
+     * Convert integer minor units such as cents into a fixed 2-decimal money string.
+     */
+    public static function fromCents(int $cents): string
+    {
+        return self::fromScaledInteger($cents, 2);
+    }
+
+    /**
+     * Normalize a money value to the persisted 2-decimal order amount precision.
+     */
+    public static function money(string|int|float $value): string
+    {
+        return self::fromScaledInteger(self::toScaledInteger($value, 2), 2);
+    }
+
+    /**
+     * Normalize a persisted commission value to six decimal places.
+     */
+    public static function commission(string|int|float $value): string
+    {
+        return self::fromScaledInteger(self::toScaledInteger($value, self::COMMISSION_SCALE), self::COMMISSION_SCALE);
+    }
+
     public static function display(string|int|float|null $value): string
     {
         if ($value === null || $value === '') {
@@ -50,8 +74,6 @@ final class CommissionMath
         $whole = preg_replace('/\D/', '', $whole) ?: '0';
         $fraction = preg_replace('/\D/', '', $fraction) ?: '';
 
-        // Monetary order values and commission rates are schema-bounded to 2 and 4 decimals.
-        // Extra digits are not used to avoid silently changing the persisted source precision.
         $fraction = substr(str_pad($fraction, $scale, '0'), 0, $scale);
 
         $integer = ((int) $whole * (10 ** $scale)) + (int) $fraction;

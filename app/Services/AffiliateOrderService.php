@@ -22,6 +22,68 @@ class AffiliateOrderService
      */
     public function getAffiliateOrder(string $orderId): array
     {
+        $order = $this->fetchOrderPayload($orderId);
+
+        $items = $order['items'] ?? [];
+        if (! is_array($items)) {
+            $items = [];
+        }
+
+        return [
+            'id' => (string) $order['id'],
+            'status' => $this->stringOrNull($order['status'] ?? null),
+            'currency' => strtoupper($this->stringOrNull($order['currency'] ?? null) ?: 'EUR'),
+            'created_at' => $this->formatDate($order['created_at'] ?? null),
+            'updated_at' => $this->formatDate($order['updated_at'] ?? null),
+            'subtotal_cents' => $this->intValue($order['subtotal_cents'] ?? 0),
+            'discount_cents' => $this->intValue($order['discount_cents'] ?? 0),
+            'tax_cents' => $this->intValue($order['tax_cents'] ?? 0),
+            'shipping_cents' => $this->intValue($order['shipping_cents'] ?? 0),
+            'grand_total_cents' => $this->intValue($order['grand_total_cents'] ?? 0),
+            'items' => array_values(array_map(
+                fn (array $item): array => $this->sanitizeItem($item),
+                array_filter($items, 'is_array'),
+            )),
+        ];
+    }
+
+    /**
+     * Return the authoritative monetary basis for affiliate commission calculation.
+     * Commerce grand_total_cents is the source of truth, so discounts, tax and shipping
+     * are reflected exactly as they are on the final order.
+     */
+    public function getCommissionTotal(string $orderId): array
+    {
+        $order = $this->fetchOrderPayload($orderId);
+
+        if (! array_key_exists('grand_total_cents', $order) || ! is_numeric($order['grand_total_cents'])) {
+            throw new UnexpectedValueException('Commerce order is missing grand_total_cents.');
+        }
+
+        $grandTotalCents = (int) $order['grand_total_cents'];
+        if ($grandTotalCents < 0) {
+            throw new UnexpectedValueException('Commerce order returned a negative grand total.');
+        }
+
+        $currency = strtoupper($this->stringOrNull($order['currency'] ?? null) ?: 'EUR');
+        if (strlen($currency) !== 3) {
+            throw new UnexpectedValueException('Commerce order returned an invalid currency.');
+        }
+
+        return [
+            'id' => (string) $order['id'],
+            'currency' => $currency,
+            'grand_total_cents' => $grandTotalCents,
+        ];
+    }
+
+    private function fetchOrderPayload(string $orderId): array
+    {
+        $orderId = trim($orderId);
+        if ($orderId === '') {
+            throw new UnexpectedValueException('Order ID is required.');
+        }
+
         $response = $this->commerce->getOrder(
             $orderId,
             (string) Str::uuid(),
@@ -38,27 +100,9 @@ class AffiliateOrderService
             throw new UnexpectedValueException('Commerce returned an unexpected order identifier.');
         }
 
-        $items = $order['items'] ?? [];
-        if (! is_array($items)) {
-            $items = [];
-        }
+        $order['id'] = $returnedOrderId;
 
-        return [
-            'id' => $returnedOrderId,
-            'status' => $this->stringOrNull($order['status'] ?? null),
-            'currency' => strtoupper($this->stringOrNull($order['currency'] ?? null) ?: 'EUR'),
-            'created_at' => $this->formatDate($order['created_at'] ?? null),
-            'updated_at' => $this->formatDate($order['updated_at'] ?? null),
-            'subtotal_cents' => $this->intValue($order['subtotal_cents'] ?? 0),
-            'discount_cents' => $this->intValue($order['discount_cents'] ?? 0),
-            'tax_cents' => $this->intValue($order['tax_cents'] ?? 0),
-            'shipping_cents' => $this->intValue($order['shipping_cents'] ?? 0),
-            'grand_total_cents' => $this->intValue($order['grand_total_cents'] ?? 0),
-            'items' => array_values(array_map(
-                fn (array $item): array => $this->sanitizeItem($item),
-                array_filter($items, 'is_array'),
-            )),
-        ];
+        return $order;
     }
 
     private function sanitizeItem(array $item): array

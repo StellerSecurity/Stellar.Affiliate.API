@@ -8,10 +8,13 @@ use App\Models\AffiliateCommission;
 use App\Models\AffiliateInstallToken;
 use App\Models\AffiliateSession;
 use App\Services\AffiliateCommissionPolicy;
+use App\Services\AffiliateOrderService;
 use App\Support\CommissionMath;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Throwable;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,6 +25,12 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $appUrl = strtolower((string) config('app.url'));
+
+        if (str_starts_with($appUrl, 'https://')) {
+            URL::forceScheme('https');
+        }
+
         Affiliate::created(function (Affiliate $affiliate): void {
             app(AffiliateCommissionPolicy::class)->ensureAffiliateEsimRate((int) $affiliate->id);
         });
@@ -88,7 +97,46 @@ class AppServiceProvider extends ServiceProvider
 
             $type = $commission->type === 'recurring' ? 'recurring' : 'initial';
             $rawProduct = (string) ($request->attributes->get('affiliate_commission_product') ?: $request->input('product', 'unknown'));
-            $orderAmount = (float) $request->input('amount', 0);
+            $orderId = trim((string) $commission->getAttribute('order_id'));
+            $incomingAmount = CommissionMath::money((string) $request->input('amount', 0));
+            $orderAmount = $incomingAmount;
+            $orderCurrency = strtoupper(trim((string) ($commission->currency ?: $request->input('currency', 'EUR'))));
+            $orderTotalSource = 'event_fallback';
+
+            if ($orderId !== '') {
+                try {
+                    $commerceTotal = app(AffiliateOrderService::class)->getCommissionTotal($orderId);
+                    $commerceOrderAmount = CommissionMath::fromCents((int) $commerceTotal['grand_total_cents']);
+
+                    if ($incomingAmount !== $commerceOrderAmount) {
+                        Log::warning('[AffiliateCommission] Event amount differs from Commerce grand total', [
+                            'order_id' => $orderId,
+                            'affiliate_id' => $affiliateId,
+                            'event_amount' => $incomingAmount,
+                            'commerce_grand_total' => $commerceOrderAmount,
+                        ]);
+                    }
+
+                    $orderAmount = $commerceOrderAmount;
+                    $orderCurrency = (string) $commerceTotal['currency'];
+                    $orderTotalSource = 'commerce_grand_total';
+                } catch (Throwable $exception) {
+                    Log::warning('[AffiliateCommission] Commerce total unavailable; event amount retained for later reconciliation', [
+                        'order_id' => $orderId,
+                        'affiliate_id' => $affiliateId,
+                        'event_amount' => $incomingAmount,
+                        'exception' => $exception::class,
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            } else {
+                Log::warning('[AffiliateCommission] Order ID missing; event amount retained for later reconciliation', [
+                    'affiliate_id' => $affiliateId,
+                    'event_amount' => $incomingAmount,
+                ]);
+            }
+
+            $request->attributes->set('affiliate_commission_order_total_source', $orderTotalSource);
 
             $policy = app(AffiliateCommissionPolicy::class);
             $product = $policy->normalizeProduct($rawProduct);
@@ -97,9 +145,12 @@ class AppServiceProvider extends ServiceProvider
 
             $commission->campaign_id = $this->resolveCampaignIdForCommission($commission, $affiliateId);
             $commission->product = $product;
-            $commission->order_amount = round($orderAmount, 2);
+            $commission->order_amount = $orderAmount;
             $commission->rate = $rate;
             $commission->rate_source = (string) $resolved['source'];
+            if ($orderCurrency !== '') {
+                $commission->currency = $orderCurrency;
+            }
             $commission->amount = CommissionMath::calculate($orderAmount, $rate);
         });
 
@@ -114,9 +165,11 @@ class AppServiceProvider extends ServiceProvider
                 'campaign_id' => $commission->campaign_id,
                 'product' => $commission->product,
                 'type' => $commission->type,
+                'order_amount' => (string) $commission->order_amount,
                 'rate' => (float) $commission->rate,
-                'amount' => (float) $commission->amount,
+                'amount' => (string) $commission->amount,
                 'rate_source' => $commission->rate_source,
+                'order_total_source' => request()->attributes->get('affiliate_commission_order_total_source', 'event_fallback'),
             ]);
         });
     }
