@@ -1,167 +1,204 @@
 @extends('layouts.affiliate')
 
-@section('title', 'Affiliate Sales · Stellar')
+@section('title', 'Conversions · Stellar Affiliate')
 
 @section('content')
-    {{-- Summary cards --}}
-    <section class="grid gap-3 md:grid-cols-4 mb-4">
-        <div class="rounded-3xl bg-gradient-to-br from-blue-600 via-blue-500 to-sky-400 p-4 shadow-glass">
-            <p class="text-[11px] font-medium text-blue-100">Total commission (all time)</p>
-            <p class="mt-1 text-2xl font-semibold text-white">
-                €{{ number_format($totalCommission, 2) }}
-            </p>
-            <p class="mt-2 text-[10px] text-blue-100/90">
-                Sum of all affiliate commissions.
-            </p>
-        </div>
+    @php
+        $salesIsAdmin = (bool) ($isAdmin ?? false);
+    @endphp
 
-        <div class="rounded-3xl bg-slate-900/80 border border-slate-800 p-4">
-            <p class="text-[11px] font-medium text-slate-300">Total sales (all time)</p>
-            <p class="mt-1 text-2xl font-semibold text-slate-100">
-                {{ number_format($totalSalesCount) }}
-            </p>
-            <p class="mt-2 text-[10px] text-slate-400">
-                Number of commission rows recorded.
-            </p>
-        </div>
-
-        <div class="rounded-3xl bg-slate-900/80 border border-slate-800 p-4">
-            <p class="text-[11px] font-medium text-slate-300">Average commission</p>
-            <p class="mt-1 text-2xl font-semibold text-emerald-400">
-                €{{ number_format($avgCommission, 2) }}
-            </p>
-            <p class="mt-2 text-[10px] text-slate-400">
-                Total commission / total sales.
-            </p>
-        </div>
-
-        <div class="rounded-3xl bg-slate-900/80 border border-slate-800 p-4">
-            <p class="text-[11px] font-medium text-slate-300">Last 30 days</p>
-            <p class="mt-1 text-[13px] font-semibold text-slate-100">
-                €{{ number_format($last30Commission, 2) }} · {{ number_format($last30Count) }} sales
-            </p>
-            <p class="mt-2 text-[10px] text-slate-400">
-                Commissions created in the last 30 days.
-            </p>
-        </div>
-    </section>
-
-    {{-- Filters --}}
-    <section class="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <section class="stellar-page-header">
         <div>
-            <p class="text-[11px] font-semibold text-slate-200">Sales and commissions</p>
-            <p class="text-[10px] text-slate-400">
-                Filter by status, product, or affiliate code.
-            </p>
+            <p class="stellar-eyebrow">Earnings</p>
+            <h1 class="stellar-page-title">Conversions</h1>
+            <p class="stellar-page-copy">View every conversion, Order ID, commission and status.</p>
         </div>
-
-        <form method="GET" class="flex flex-wrap items-center gap-2 text-[10px]">
-            <div class="flex items-center gap-1">
-                <label class="text-slate-400">Status:</label>
-                <select name="status"
-                        onchange="this.form.submit()"
-                        class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[10px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="" {{ $currentStatusFilter ? '' : 'selected' }}>All</option>
-                    <option value="pending" {{ $currentStatusFilter === 'pending' ? 'selected' : '' }}>Pending</option>
-                    <option value="approved" {{ $currentStatusFilter === 'approved' ? 'selected' : '' }}>Approved</option>
-                    <option value="paid" {{ $currentStatusFilter === 'paid' ? 'selected' : '' }}>Paid</option>
-                    <option value="rejected" {{ $currentStatusFilter === 'rejected' ? 'selected' : '' }}>Rejected</option>
-                </select>
-            </div>
-
-            <div class="flex items-center gap-1">
-                <label class="text-slate-400">Product:</label>
-                <input type="text"
-                       name="product"
-                       value="{{ $currentProductFilter }}"
-                       placeholder="vpn / antivirus / notes"
-                       class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[10px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-            </div>
-
-            <div class="flex items-center gap-1">
-                <label class="text-slate-400">Affiliate code:</label>
-                <input type="text"
-                       name="affiliate"
-                       value="{{ $currentAffiliateCode }}"
-                       placeholder="AFF123"
-                       class="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-[10px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
-            </div>
-
-            <button type="submit"
-                    class="rounded-full border border-slate-700 bg-slate-800 px-3 py-1 text-[10px] text-slate-100">
-                Apply
-            </button>
-        </form>
     </section>
 
-    {{-- Sales table --}}
-    <section class="rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
-        <div class="overflow-x-auto text-[10px]">
-            <table class="min-w-full border-separate border-spacing-y-1">
-                <thead class="text-slate-400">
-                <tr>
-                    <th class="px-3 py-1 text-left font-medium">Date</th>
-                    <th class="px-3 py-1 text-left font-medium">Affiliate</th>
-                    <th class="px-3 py-1 text-left font-medium">Product</th>
-                    <th class="px-3 py-1 text-left font-medium">Order ID</th>
-                    <th class="px-3 py-1 text-right font-medium">Order amount</th>
-                    <th class="px-3 py-1 text-right font-medium">Commission</th>
-                    <th class="px-3 py-1 text-left font-medium">Status</th>
-                </tr>
-                </thead>
-                <tbody>
-                @forelse($sales as $sale)
-                    @php
-                        $orderAmount = $sale->order_amount ?? $sale->amount;
-                        $statusColor = match($sale->status) {
-                            'approved' => 'text-emerald-400',
-                            'paid' => 'text-emerald-400',
-                            'pending' => 'text-amber-300',
-                            'rejected' => 'text-red-400',
-                            default => 'text-slate-300',
-                        };
-                    @endphp
-                    <tr class="rounded-2xl bg-slate-950/70 text-slate-200">
-                        <td class="px-3 py-2 rounded-l-2xl">
-                            {{ $sale->created_at }}
-                        </td>
-                        <td class="px-3 py-2">
-                            {{ $sale->affiliate->public_code ?? 'N/A' }}
-                        </td>
-                        <td class="px-3 py-2">
-                            {{ $sale->product ?? 'vpn' }}
-                        </td>
-                        <td class="px-3 py-2">
-                            {{ $sale->order_id ?? '-' }}
-                        </td>
-                        <td class="px-3 py-2 text-right">
-                            €{{ number_format($orderAmount, 2) }}
-                        </td>
-                        <td class="px-3 py-2 text-right text-emerald-400">
-                            €{{ number_format($sale->amount, 2) }}
-                        </td>
-                        <td class="px-3 py-2 rounded-r-2xl">
-                            <span class="{{ $statusColor }}">
-                                {{ ucfirst($sale->status ?? 'unknown') }}
-                            </span>
-                        </td>
-                    </tr>
-                @empty
-                    <tr>
-                        <td colspan="7" class="px-3 py-4 text-center text-slate-500">
-                            No sales found.
-                        </td>
-                    </tr>
-                @endforelse
-                </tbody>
-            </table>
-        </div>
-
-        {{-- Pagination --}}
-        @if(method_exists($sales, 'links'))
-            <div class="mt-3">
-                {{ $sales->links('pagination::bootstrap-4') }}
+    @if($needsAffiliateSetup ?? false)
+        <section class="stellar-card stellar-empty">
+            <div>
+                <span class="stellar-empty-icon">↗</span>
+                <h3>Finish setup to track conversions</h3>
+                <p>Complete setup to start tracking conversions.</p>
+                <div class="stellar-actions" style="justify-content: center;">
+                    <a href="{{ route('affiliate.onboarding') }}" class="stellar-btn stellar-btn-primary">Continue setup</a>
+                </div>
             </div>
-        @endif
-    </section>
+        </section>
+    @else
+        <section class="stellar-grid-4">
+            <article class="stellar-card stellar-metric">
+                <div class="stellar-metric-label">All-time commission</div>
+                <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($totalCommission) }}</div>
+                <div class="stellar-metric-detail">All pending, approved and paid commissions.</div>
+            </article>
+            <article class="stellar-card stellar-metric">
+                <div class="stellar-metric-label">All-time conversions</div>
+                <div class="stellar-metric-value">{{ number_format($totalSalesCount) }}</div>
+                <div class="stellar-metric-detail">All pending, approved and paid conversions.</div>
+            </article>
+            <article class="stellar-card stellar-metric">
+                <div class="stellar-metric-label">Average commission</div>
+                <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($avgCommission) }}</div>
+                <div class="stellar-metric-detail">Average commission per conversion.</div>
+            </article>
+            <article class="stellar-card stellar-metric">
+                <div class="stellar-metric-label">Last 30 days</div>
+                <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($last30Commission) }}</div>
+                <div class="stellar-metric-detail">{{ number_format($last30Count) }} conversion{{ $last30Count === 1 ? '' : 's' }}.</div>
+            </article>
+        </section>
+
+        <section class="stellar-card stellar-card-pad stellar-section">
+            <div class="stellar-section-head">
+                <div>
+                    <p class="stellar-eyebrow">Commission status</p>
+                    <h2 class="stellar-section-title">Know what each status means</h2>
+                </div>
+            </div>
+            <div class="stellar-status-guide">
+                <div><span class="stellar-badge is-warning">Pending review</span><p>Recorded, but not approved yet.</p></div>
+                <div><span class="stellar-badge is-success">Approved</span><p>Ready to be included in a payout.</p></div>
+                <div><span class="stellar-badge is-success">Paid out</span><p>The commission has been paid.</p></div>
+                <div><span class="stellar-badge is-danger">Rejected</span><p>Not included in earnings or payout totals.</p></div>
+            </div>
+        </section>
+
+        <section class="stellar-card stellar-card-pad stellar-section">
+            <div class="stellar-section-head">
+                <div>
+                    <h2 class="stellar-section-title">Filter conversions</h2>
+                    <p class="stellar-section-copy">Narrow down your conversions.</p>
+                </div>
+            </div>
+
+            <form method="GET" class="stellar-filterbar">
+                <div class="stellar-field">
+                    <label for="conversion-status" class="stellar-label">Status</label>
+                    <select id="conversion-status" name="status" class="stellar-select">
+                        <option value="">All statuses</option>
+                        <option value="pending" {{ $currentStatusFilter === 'pending' ? 'selected' : '' }}>Pending review</option>
+                        <option value="approved" {{ $currentStatusFilter === 'approved' ? 'selected' : '' }}>Approved</option>
+                        <option value="paid_out" {{ $currentStatusFilter === 'paid_out' ? 'selected' : '' }}>Paid out</option>
+                        <option value="rejected" {{ $currentStatusFilter === 'rejected' ? 'selected' : '' }}>Rejected</option>
+                    </select>
+                </div>
+
+                <div class="stellar-field">
+                    <label for="conversion-type" class="stellar-label">Commission type</label>
+                    <select id="conversion-type" name="type" class="stellar-select">
+                        <option value="">All types</option>
+                        <option value="initial" {{ $currentTypeFilter === 'initial' ? 'selected' : '' }}>First payment</option>
+                        <option value="recurring" {{ $currentTypeFilter === 'recurring' ? 'selected' : '' }}>Recurring</option>
+                    </select>
+                </div>
+                <div class="stellar-field">
+                    <label for="conversion-product" class="stellar-label">Product</label>
+                    <select id="conversion-product" name="product" class="stellar-select">
+                        <option value="">All products</option>
+                        <option value="vpn" {{ ($currentProductFilter ?? '') === 'vpn' ? 'selected' : '' }}>Stellar VPN</option>
+                        <option value="antivirus" {{ ($currentProductFilter ?? '') === 'antivirus' ? 'selected' : '' }}>Stellar Antivirus</option>
+                        <option value="esim" {{ ($currentProductFilter ?? '') === 'esim' ? 'selected' : '' }}>Stellar eSIM</option>
+                    </select>
+                </div>
+
+                @if($salesIsAdmin)
+                    <div class="stellar-field">
+                        <label for="conversion-affiliate" class="stellar-label">Affiliate code</label>
+                        <input id="conversion-affiliate" name="affiliate" value="{{ $currentAffiliateCode }}" class="stellar-input" placeholder="e.g. AFF123">
+                    </div>
+                @endif
+
+                <button type="submit" class="stellar-btn stellar-btn-primary">Apply filters</button>
+                @if($currentStatusFilter || $currentTypeFilter || ($currentProductFilter ?? false) || ($salesIsAdmin && $currentAffiliateCode))
+                    <a href="{{ route('affiliate.sales') }}" class="stellar-btn stellar-btn-secondary">Clear</a>
+                @endif
+            </form>
+        </section>
+
+        <section class="stellar-card stellar-card-pad stellar-section">
+            <div class="stellar-section-head">
+                <div>
+                    <h2 class="stellar-section-title">Conversion ledger</h2>
+                    <p class="stellar-section-copy">Every conversion with its order, rate and payout status.</p>
+                </div>
+            </div>
+
+            @if($sales->isEmpty())
+                <div class="stellar-empty">
+                    <div>
+                        <span class="stellar-empty-icon">↗</span>
+                        @if($currentStatusFilter || $currentTypeFilter || ($currentProductFilter ?? false) || ($salesIsAdmin && $currentAffiliateCode))
+                            <h3>No conversions match these filters</h3>
+                            <p>Clear the filters to return to the full conversion ledger.</p>
+                            <div class="stellar-actions" style="justify-content: center;">
+                                <a href="{{ route('affiliate.sales') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Clear filters</a>
+                            </div>
+                        @else
+                            <h3>No conversions yet</h3>
+                            <p>Share a campaign link. Your conversions will appear here automatically.</p>
+                            <div class="stellar-actions" style="justify-content: center;">
+                                <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Open campaigns</a>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @else
+                <div class="stellar-table-wrap">
+                    <table class="stellar-table">
+                        <thead>
+                        <tr>
+                            <th>Date</th>
+                            @if($salesIsAdmin)<th>Affiliate</th>@endif
+                            <th>Order ID</th>
+                            <th>Product</th>
+                            <th>Type</th>
+                            <th>Rate</th>
+                            <th>Commission</th>
+                            <th>Status</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach($sales as $sale)
+                            @php
+                                $orderId = $sale->getRawOriginal('order_id') ?: '-';
+                                $status = $sale->status ?: 'unknown';
+                                $statusClass = match($status) {
+                                    'approved', 'paid_out' => 'is-success',
+                                    'pending' => 'is-warning',
+                                    'rejected' => 'is-danger',
+                                    default => '',
+                                };
+                                $statusLabel = match($status) { 'paid_out' => 'Paid out', 'pending' => 'Pending review', default => ucfirst($status) };
+                                $rate = (float) $sale->rate;
+                            @endphp
+                            <tr>
+                                <td>{{ $sale->created_at?->format('M j, Y · H:i') }}</td>
+                                @if($salesIsAdmin)<td class="strong">{{ $sale->affiliate?->public_code ?: '—' }}</td>@endif
+                                <td>
+                                    @if($orderId !== '-')
+                                        <a href="{{ route('affiliate.orders.show', ['commission' => $sale->id]) }}" class="stellar-order-link" title="View order {{ $orderId }}">
+                                            <span class="stellar-code">{{ $orderId }}</span>
+                                            <span>View</span>
+                                        </a>
+                                    @else
+                                        <span class="stellar-code">—</span>
+                                    @endif
+                                </td>
+                                <td>{{ $sale->product ? config('affiliate.products.'.$sale->product.'.label', ucfirst($sale->product)) : 'Unassigned' }}</td>
+                                <td>{{ $sale->type === 'initial' ? 'First payment' : ($sale->type === 'recurring' ? 'Recurring' : '—') }}</td>
+                                <td>{{ rtrim(rtrim(number_format($rate * 100, 2), '0'), '.') }}%</td>
+                                <td class="strong">{{ $sale->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($sale->amount) }}</td>
+                                <td><span class="stellar-badge {{ $statusClass }}">{{ $statusLabel }}</span></td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="stellar-pagination">{{ $sales->onEachSide(1)->links() }}</div>
+            @endif
+        </section>
+    @endif
 @endsection

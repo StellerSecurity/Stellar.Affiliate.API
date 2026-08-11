@@ -22,6 +22,27 @@ class ResolveAffiliateFromAuthUser
             return $next($request);
         }
 
+        $impersonation = $request->session()->get('affiliate_impersonation');
+        if (is_array($impersonation)) {
+            $affiliateId = (int) ($impersonation['affiliate_id'] ?? 0);
+            $startedByUserId = (int) ($impersonation['started_by_user_id'] ?? 0);
+
+            if ($affiliateId > 0
+                && $startedByUserId === (int) $user->id
+                && $user->affiliateAdminRole() === 'super_admin') {
+                $affiliate = Affiliate::find($affiliateId);
+
+                if ($affiliate) {
+                    $request->attributes->set('affiliate', $affiliate);
+                    $request->attributes->set('affiliate_impersonation', true);
+
+                    return $next($request);
+                }
+            }
+
+            $request->session()->forget('affiliate_impersonation');
+        }
+
         // 1) Preferred: explicit link
         $affiliate = Affiliate::query()
             ->where('external_user_id', $user->id)

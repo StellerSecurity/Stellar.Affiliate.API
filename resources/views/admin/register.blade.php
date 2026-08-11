@@ -2,99 +2,83 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stellar Affiliate Register</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
+    <meta name="color-scheme" content="light">
+    <title>Create account · Stellar Affiliate</title>
     <link rel="stylesheet" href="{{ asset('css/stellar-tailwind.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/stellar-affiliate.css') }}">
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-<div class="w-full max-w-sm px-4">
-    <div class="rounded-3xl bg-slate-900/80 border border-slate-800 p-6 shadow-xl">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-md shadow-blue-500/40">
-                <span class="text-sm font-semibold">S</span>
+<body class="stellar-auth-body">
+<div>
+    <main class="stellar-auth-shell">
+        <section class="stellar-auth-story">
+            <div class="stellar-auth-story-inner">
+                <a href="{{ route('affiliate.login') }}" class="stellar-brand">
+                    <span class="stellar-brand-mark" aria-hidden="true"></span>
+                    <span class="stellar-brand-copy">
+                        <span class="stellar-wordmark">stellar<span class="accent">.</span> affiliate</span>
+                        <span class="stellar-brand-subtitle">Guided affiliate setup</span>
+                    </span>
+                </a>
+
+                <div>
+                    <h1>From account to tracking link, <span>guided end to end.</span></h1>
+                    <p>Create your login, then follow the guided steps to your first campaign and share-ready tracking link.</p>
+                    <div class="stellar-auth-points">
+                        <span class="stellar-auth-point">1 · Account</span>
+                        <span class="stellar-auth-point">2 · Affiliate profile</span>
+                        <span class="stellar-auth-point">3 · Campaign</span>
+                        <span class="stellar-auth-point">4 · Copy link</span>
+                    </div>
+                </div>
             </div>
-            <div>
-                <p class="text-sm font-semibold">Stellar Affiliate Portal</p>
-                <p class="text-[11px] text-slate-400">Create your login.</p>
-            </div>
-        </div>
+        </section>
 
-        @if ($errors->any())
-            <div class="mb-3 rounded-2xl bg-red-500/10 border border-red-500/60 px-3 py-2 text-[11px] text-red-200">
-                {{ $errors->first() }}
-            </div>
-        @endif
+        <section class="stellar-auth-form">
+            <a href="{{ route('affiliate.login') }}" class="stellar-brand">
+                <span class="stellar-brand-mark" aria-hidden="true"></span>
+                <span class="stellar-wordmark">stellar<span class="accent">.</span></span>
+            </a>
 
-        <form method="POST" action="{{ route('affiliate.register.post') }}" class="space-y-3">
-            @csrf
+            <h2>Create your account</h2>
+            <p>You will be taken straight into guided setup after registration.</p>
 
-            <div class="space-y-1">
-                <label class="text-[11px] text-slate-300" for="name">Name</label>
-                <input
-                    id="name"
-                    type="text"
-                    name="name"
-                    value="{{ old('name') }}"
-                    required
-                    autofocus
-                    class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-            </div>
+            @if ($errors->any())
+                <div class="stellar-flash is-error" role="alert">{{ $errors->first() }}</div>
+            @endif
 
-            <div class="space-y-1">
-                <label class="text-[11px] text-slate-300" for="email">Email</label>
-                <input
-                    id="email"
-                    type="email"
-                    name="email"
-                    value="{{ old('email') }}"
-                    required
-                    class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-            </div>
+            <form method="POST" action="{{ route('affiliate.register.post') }}" class="stellar-form-grid">
+                @csrf
 
-            <div class="space-y-1">
-                <label class="text-[11px] text-slate-300" for="password">Password</label>
-                <input
-                    id="password"
-                    type="password"
-                    name="password"
-                    required
-                    minlength="6"
-                    class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                <p class="text-[10px] text-slate-500">Minimum 6 characters.</p>
-            </div>
+                <div class="stellar-field">
+                    <label class="stellar-label" for="name">Name</label>
+                    <input id="name" name="name" value="{{ old('name') }}" required autofocus autocomplete="name" maxlength="255" class="stellar-input" placeholder="Your name">
+                </div>
 
-            <div class="space-y-1">
-                <label class="text-[11px] text-slate-300" for="password_confirmation">Confirm password</label>
-                <input
-                    id="password_confirmation"
-                    type="password"
-                    name="password_confirmation"
-                    required
-                    minlength="12"
-                    class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-            </div>
+                <div class="stellar-field">
+                    <label class="stellar-label" for="email">Email</label>
+                    <input id="email" type="email" name="email" value="{{ old('email') }}" required autocomplete="email" maxlength="255" class="stellar-input" placeholder="you@example.com">
+                </div>
 
-            <button
-                type="submit"
-                class="mt-2 w-full rounded-2xl bg-slate-100 px-4 py-2 text-[12px] font-semibold text-slate-900 hover:bg-white"
-            >
-                Create account
-            </button>
-        </form>
+                <div class="stellar-form-row">
+                    <div class="stellar-field">
+                        <label class="stellar-label" for="password">Password</label>
+                        <input id="password" type="password" name="password" required minlength="8" maxlength="255" autocomplete="new-password" class="stellar-input" placeholder="Create a password">
+                    </div>
+                    <div class="stellar-field">
+                        <label class="stellar-label" for="password_confirmation">Confirm password</label>
+                        <input id="password_confirmation" type="password" name="password_confirmation" required minlength="8" maxlength="255" autocomplete="new-password" class="stellar-input" placeholder="Repeat your password">
+                    </div>
+                </div>
 
-        <div class="mt-4 text-center text-[11px] text-slate-400">
-            <a href="{{ route('affiliate.login') }}" class="underline hover:text-slate-200">Already have an account? Log in</a>
-        </div>
-    </div>
+                <button type="submit" class="stellar-btn stellar-btn-primary">Create account & continue</button>
+            </form>
 
-    <p class="mt-3 text-center text-[10px] text-slate-500">
-        © Stellar Security
-    </p>
+            <div class="stellar-auth-alt">Already have an account? <a href="{{ route('affiliate.login') }}">Log in</a></div>
+        </section>
+    </main>
+    <p class="stellar-auth-footer">© Stellar Security · Affiliate access · <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}">Support</a></p>
 </div>
+    <script src="{{ asset('js/affiliate-portal.js') }}" defer></script>
 </body>
 </html>

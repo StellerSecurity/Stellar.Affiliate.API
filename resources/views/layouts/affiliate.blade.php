@@ -1,30 +1,84 @@
+@php
+    $portalAffiliate = $currentAffiliate ?? request()->attributes->get('affiliate');
+    $portalIsAdmin = (bool) ($isAdmin ?? $admin ?? false);
+    $portalImpersonation = session('affiliate_impersonation');
+    $portalViewingAffiliate = is_array($portalImpersonation) && ! $portalIsAdmin && $portalAffiliate;
+@endphp
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>@yield('title', 'Stellar Affiliate Portal')</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>@yield('title', 'Stellar Affiliate')</title>
 
     <link rel="stylesheet" href="{{ asset('css/stellar-tailwind.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/stellar-affiliate.css') }}">
+    <script src="{{ asset('js/affiliate-portal.js') }}" defer></script>
 </head>
-<body class="bg-slate-950 text-slate-100 antialiased">
-<div class="min-h-screen bg-slate-950 flex flex-col">
+<body class="stellar-body">
+<div class="stellar-app">
     @include('partials.affiliate-topbar')
 
-    <div class="flex-1 mx-auto flex w-full max-w-6xl gap-4 px-4 py-4">
+    @if($portalViewingAffiliate)
+        <div class="stellar-impersonation-bar" role="status">
+            <div class="stellar-impersonation-inner">
+                <div>
+                    <strong>Viewing as {{ $portalAffiliate->name ?: $portalAffiliate->public_code }}</strong>
+                    <span>{{ $portalAffiliate->public_code }} · You are seeing this affiliate's workspace. Changes made here affect this affiliate.</span>
+                </div>
+                <form method="POST" action="{{ route('affiliate.impersonation.stop') }}">
+                    @csrf
+                    <button type="submit" class="stellar-btn stellar-btn-secondary stellar-btn-small">Exit affiliate view</button>
+                </form>
+            </div>
+        </div>
+    @endif
+
+    <div class="stellar-shell">
         @include('partials.affiliate-sidebar')
 
-        <main class="flex-1 space-y-4">
+        <main class="stellar-main">
+            @if (session('status'))
+                <div class="stellar-flash" role="status">
+                    <span aria-hidden="true">✓</span>
+                    <span>{{ session('status') }}</span>
+                </div>
+            @endif
+
+            @if ($errors->any())
+                <div class="stellar-flash is-error" role="alert">
+                    <span aria-hidden="true">!</span>
+                    <span>{{ $errors->first() }}</span>
+                </div>
+            @endif
+
+            @if(!$portalIsAdmin && $portalAffiliate && $portalAffiliate->status !== 'active')
+                <div class="stellar-flash is-warning" role="status">
+                    <span aria-hidden="true">!</span>
+                    <span>
+                        @if($portalAffiliate->status === 'pending')
+                            Your affiliate account is pending approval. Your tracking links activate when the account is approved.
+                        @else
+                            Your affiliate account is not active. <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}">Contact support</a> if you need help.
+                        @endif
+                    </span>
+                </div>
+            @endif
+
             @yield('content')
         </main>
     </div>
 
-    <footer class="mx-auto mt-auto w-full max-w-6xl px-4 pb-4 text-[10px] text-slate-500">
-        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
-            <span>© Stellar Security · Swiss privacy-first ecosystem.</span>
-            <span>Referral cookie: <span class="font-semibold text-slate-200">180 days</span>.</span>
+    <footer class="stellar-footer">
+        <div class="stellar-footer-inner">
+            <span>© Stellar Security · Affiliate workspace.</span>
+            <span>Need help? <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}">{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}</a></span>
         </div>
     </footer>
 </div>
+
+<div class="stellar-scrim" data-portal-scrim aria-hidden="true"></div>
+@stack('scripts')
 </body>
 </html>

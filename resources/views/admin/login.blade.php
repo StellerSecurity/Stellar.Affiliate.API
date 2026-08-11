@@ -2,87 +2,82 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stellar Affiliate Admin Login</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
+    <meta name="color-scheme" content="light">
+    <title>Log in · Stellar Affiliate</title>
     <link rel="stylesheet" href="{{ asset('css/stellar-tailwind.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/stellar-affiliate.css') }}">
 </head>
-<body class="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-<div class="w-full max-w-sm px-4">
-    <div class="rounded-3xl bg-slate-900/80 border border-slate-800 p-6 shadow-xl">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-md shadow-blue-500/40">
-                <span class="text-sm font-semibold">S</span>
-            </div>
-            <div>
-                <p class="text-sm font-semibold">Stellar Affiliate Admin</p>
-                <p class="text-[11px] text-slate-400">Secure Swiss backend access.</p>
-            </div>
-        </div>
+<body class="stellar-auth-body">
+<div>
+    <main class="stellar-auth-shell">
+        <section class="stellar-auth-story">
+            <div class="stellar-auth-story-inner">
+                <a href="{{ route('affiliate.login') }}" class="stellar-brand">
+                    <span class="stellar-brand-mark" aria-hidden="true"></span>
+                    <span class="stellar-brand-copy">
+                        <span class="stellar-wordmark">stellar<span class="accent">.</span> affiliate</span>
+                        <span class="stellar-brand-subtitle">Private affiliate workspace</span>
+                    </span>
+                </a>
 
-        @if ($errors->any())
-            <div class="mb-3 rounded-2xl bg-red-500/10 border border-red-500/60 px-3 py-2 text-[11px] text-red-200">
-                {{ $errors->first() }}
+                <div>
+                    <h1>Affiliate growth, <span>clearly tracked.</span></h1>
+                    <p>Campaigns, conversions with Order IDs, commissions and payouts in one clear workspace.</p>
+                    <div class="stellar-auth-points">
+                        <span class="stellar-auth-point">180-day referral window</span>
+                        <span class="stellar-auth-point">Order ID visibility</span>
+                        <span class="stellar-auth-point">Swiss-built ecosystem</span>
+                    </div>
+                </div>
             </div>
-        @endif
+        </section>
 
-        @if (session('status'))
-            <div class="mb-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/60 px-3 py-2 text-[11px] text-emerald-200">
-                {{ session('status') }}
-            </div>
-        @endif
+        <section class="stellar-auth-form">
+            <a href="{{ route('affiliate.login') }}" class="stellar-brand">
+                <span class="stellar-brand-mark" aria-hidden="true"></span>
+                <span class="stellar-wordmark">stellar<span class="accent">.</span></span>
+            </a>
 
-        <form method="POST" action="{{ route('affiliate.login.post') }}" class="space-y-3">
-            @csrf
+            <h2>Welcome back</h2>
+            <p>Log in to your affiliate workspace.</p>
 
-            <div class="space-y-1">
-                <label class="text-[11px] text-slate-300" for="email">Email</label>
-                <input
-                    id="email"
-                    type="email"
-                    name="email"
-                    value="{{ old('email') }}"
-                    required
-                    autofocus
-                    class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-            </div>
+            @if ($errors->any())
+                <div class="stellar-flash is-error" role="alert">{{ $errors->first() }}</div>
+            @endif
 
-            <div class="space-y-1">
-                <label class="text-[11px] text-slate-300" for="password">Password</label>
-                <input
-                    id="password"
-                    type="password"
-                    name="password"
-                    required
-                    class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-2 text-[12px] text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-            </div>
+            @if (session('status'))
+                <div class="stellar-flash" role="status">{{ session('status') }}</div>
+            @endif
 
-            <div class="flex items-center justify-between text-[11px]">
-                <label class="inline-flex items-center gap-1 text-slate-400">
-                    <input type="checkbox" name="remember" class="h-3 w-3 rounded border-slate-600 bg-slate-900">
-                    <span>Remember me</span>
+            <form method="POST" action="{{ route('affiliate.login.post') }}" class="stellar-form-grid">
+                @csrf
+
+                <div class="stellar-field">
+                    <label class="stellar-label" for="email">Email</label>
+                    <input id="email" type="email" name="email" value="{{ old('email') }}" required autofocus autocomplete="email" class="stellar-input" placeholder="you@example.com">
+                </div>
+
+                <div class="stellar-field">
+                    <label class="stellar-label" for="password">Password</label>
+                    <input id="password" type="password" name="password" required maxlength="255" autocomplete="current-password" class="stellar-input" placeholder="Your password">
+                </div>
+
+                <label class="stellar-checkbox">
+                    <input type="checkbox" name="remember" value="1">
+                    Keep me signed in on this device
                 </label>
-            </div>
 
-            <button
-                type="submit"
-                class="mt-2 w-full rounded-2xl bg-slate-100 px-4 py-2 text-[12px] font-semibold text-slate-900 hover:bg-white"
-            >
-                Log in
-            </button>
-        </form>
+                <button type="submit" class="stellar-btn stellar-btn-primary">Log in</button>
+            </form>
 
-        @if (filter_var(env('AFFILIATE_SELF_REGISTER_ENABLED', true), FILTER_VALIDATE_BOOL))
-            <div class="mt-4 text-center text-[11px] text-slate-400">
-                <a href="{{ route('affiliate.register') }}" class="underline hover:text-slate-200">Create account</a>
-            </div>
-        @endif
-    </div>
-    <p class="mt-3 text-center text-[10px] text-slate-500">
-        © Stellar Security · Internal use only.
-    </p>
+            @if ((bool) config('affiliate.self_register_enabled', true))
+                <div class="stellar-auth-alt">New affiliate? <a href="{{ route('affiliate.register') }}">Create your account</a></div>
+            @endif
+        </section>
+    </main>
+    <p class="stellar-auth-footer">© Stellar Security · Affiliate access · <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}">Support</a></p>
 </div>
+    <script src="{{ asset('js/affiliate-portal.js') }}" defer></script>
 </body>
 </html>

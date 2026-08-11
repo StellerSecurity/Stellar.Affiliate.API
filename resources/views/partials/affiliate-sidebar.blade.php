@@ -1,62 +1,99 @@
-<aside class="hidden w-52 shrink-0 md:block">
-    <nav class="space-y-1 text-[11px]">
+@php
+    $workspaceItems = [
+        ['route' => 'affiliate.dashboard', 'label' => 'Dashboard'],
+        ['route' => 'affiliate.campaigns.index', 'label' => 'Campaigns'],
+        ['route' => 'affiliate.sales', 'label' => 'Conversions'],
+        ['route' => 'affiliate.analytics', 'label' => 'Analytics'],
+        ['route' => 'affiliate.payouts', 'label' => 'Payouts'],
+        ['route' => 'affiliate.settings', 'label' => 'Settings'],
+    ];
 
-        <p class="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-            Overview
-        </p>
+    $adminItems = [
+        ['route' => 'affiliate.admin.dashboard', 'label' => 'Overview'],
+        ['route' => 'affiliate.admin.affiliates.index', 'label' => 'Affiliates'],
+        ['route' => 'affiliate.admin.commissions.index', 'label' => 'Commissions'],
+        ['route' => 'affiliate.admin.rates.index', 'label' => 'Commission rules'],
+        ['route' => 'affiliate.admin.campaigns.index', 'label' => 'Campaigns'],
+        ['route' => 'affiliate.admin.tracking.index', 'label' => 'Tracking'],
+        ['route' => 'affiliate.admin.payouts.index', 'label' => 'Payouts'],
+    ];
+@endphp
+<aside class="stellar-sidebar" data-portal-sidebar>
+    @if($portalIsAdmin)
+        <p class="stellar-nav-label">Admin center</p>
+        <nav class="stellar-nav" aria-label="Affiliate admin navigation">
+            @foreach($adminItems as $item)
+                <a href="{{ route($item['route']) }}" class="stellar-nav-link {{ request()->routeIs($item['route']) || (str_contains($item['route'], 'affiliates.index') && request()->routeIs('affiliate.admin.affiliates.*')) ? 'is-active' : '' }}">
+                    <span class="stellar-nav-dot" aria-hidden="true"></span>
+                    <span>{{ $item['label'] }}</span>
+                </a>
+            @endforeach
 
-        <a href="{{ route('affiliate.dashboard') }}"
-           class="w-full flex items-center gap-2 rounded-2xl px-3 py-2
-                  {{ request()->routeIs('affiliate.dashboard') ? 'bg-slate-900 text-slate-100' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100' }}">
-            <span>🏠</span>
-            <span>Dashboard</span>
-        </a>
+            @if(auth()->user()?->canManageAffiliateRoles())
+                <a href="{{ route('affiliate.admin.users.index') }}" class="stellar-nav-link {{ request()->routeIs('affiliate.admin.users.*') ? 'is-active' : '' }}">
+                    <span class="stellar-nav-dot" aria-hidden="true"></span>
+                    <span>Admin roles</span>
+                </a>
+            @endif
+        </nav>
 
-        <a href="{{ route('affiliate.analytics') }}"
-           class="w-full flex items-center gap-2 rounded-2xl px-3 py-2
-                  {{ request()->routeIs('affiliate.analytics') ? 'bg-slate-900 text-slate-100' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100' }}">
-            <span>📈</span>
-            <span>Analytics</span>
-        </a>
+        <div class="stellar-side-card">
+            <p class="eyebrow">Access</p>
+            <strong>{{ ucwords(str_replace('_', ' ', auth()->user()?->affiliateAdminRole() ?: 'admin')) }}</strong>
+            <p>Manage affiliates, rates, commissions and payouts.</p>
+            <a class="stellar-side-link" href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}">Contact support</a>
+        </div>
+    @else
+        <p class="stellar-nav-label">Workspace</p>
+        <nav class="stellar-nav" aria-label="Affiliate navigation">
+            @if(!$portalAffiliate)
+                <a href="{{ route('affiliate.dashboard') }}" class="stellar-nav-link {{ request()->routeIs('affiliate.dashboard') ? 'is-active' : '' }}">
+                    <span class="stellar-nav-dot" aria-hidden="true"></span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="{{ route('affiliate.onboarding') }}" class="stellar-nav-link {{ request()->routeIs('affiliate.onboarding') ? 'is-active' : '' }}">
+                    <span class="stellar-nav-dot" aria-hidden="true"></span>
+                    <span>Get started</span>
+                </a>
+            @else
+                @foreach($workspaceItems as $item)
+                    @php
+                        $active = request()->routeIs($item['route']);
+                        if ($item['route'] === 'affiliate.campaigns.index') {
+                            $active = $active || request()->routeIs('affiliate.onboarding');
+                        }
+                        if ($item['route'] === 'affiliate.sales') {
+                            $active = $active || request()->routeIs('affiliate.orders.*');
+                        }
+                    @endphp
+                    <a href="{{ route($item['route']) }}" class="stellar-nav-link {{ $active ? 'is-active' : '' }}">
+                        <span class="stellar-nav-dot" aria-hidden="true"></span>
+                        <span>{{ $item['label'] }}</span>
+                    </a>
+                @endforeach
+            @endif
+        </nav>
 
-        <a href="{{ route('affiliate.sales') }}"
-           class="w-full flex items-center gap-2 rounded-2xl px-3 py-2
-                  {{ request()->routeIs('affiliate.sales') ? 'bg-slate-900 text-slate-100' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100' }}">
-            <span>🧾</span>
-            <span>Sales</span>
-        </a>
+        <div class="stellar-side-card">
+            @if(!$portalAffiliate)
+                <p class="eyebrow">Setup</p>
+                <strong>Finish your workspace</strong>
+                <p>Create your affiliate profile and first campaign. The portal generates the tracking link for you.</p>
+                <div class="stellar-actions">
+                    <a href="{{ route('affiliate.onboarding') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Continue setup</a>
+                </div>
+            @else
+                <p class="eyebrow">Affiliate code</p>
+                <strong>{{ $portalAffiliate->public_code }}</strong>
+                <p>Referral window: up to 180 days.</p>
+            @endif
+        </div>
 
-        {{-- ⭐ NEW: CAMPAIGNS --}}
-        <a href="{{ route('affiliate.campaigns.index') }}"
-           class="w-full flex items-center gap-2 rounded-2xl px-3 py-2
-                  {{ request()->routeIs('affiliate.campaigns.index') ? 'bg-slate-900 text-slate-100' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100' }}">
-            <span>🎯</span>
-            <span>Campaigns</span>
-        </a>
-
-        <a href="{{ route('affiliate.payouts') }}"
-           class="w-full flex items-center gap-2 rounded-2xl px-3 py-2
-                  {{ request()->routeIs('affiliate.payouts') ? 'bg-slate-900 text-slate-100' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100' }}">
-            <span>💰</span>
-            <span>Payouts</span>
-        </a>
-
-        <p class="mt-4 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-            Account
-        </p>
-
-        <a href="{{ route('affiliate.affiliates.index') }}"
-           class="w-full flex items-center gap-2 rounded-2xl px-3 py-2
-                  {{ request()->routeIs('affiliate.affiliates.index') ? 'bg-slate-900 text-slate-100' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100' }}">
-            <span>👥</span>
-            <span>Affiliates</span>
-        </a>
-
-        <a href="{{ route('affiliate.settings') }}"
-           class="w-full flex items-center gap-2 rounded-2xl px-3 py-2
-                  {{ request()->routeIs('affiliate.settings') ? 'bg-slate-900 text-slate-100' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-100' }}">
-            <span>⚙️</span>
-            <span>Settings</span>
-        </a>
-    </nav>
+        <div class="stellar-side-card stellar-support-mini">
+            <p class="eyebrow">Support</p>
+            <strong>Need help?</strong>
+            <p>Email Stellar Security and we’ll help you with links, commissions or payouts.</p>
+            <a class="stellar-side-link" href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}">{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}</a>
+        </div>
+    @endif
 </aside>

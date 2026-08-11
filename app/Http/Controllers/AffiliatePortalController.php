@@ -8,9 +8,12 @@ use App\Models\AffiliateClick;
 use App\Models\AffiliateSession;
 use App\Models\AffiliateCommission;
 use App\Models\Payout as AffiliatePayout;
+use App\Services\AffiliateOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class AffiliatePortalController extends Controller
 {
@@ -56,15 +59,105 @@ class AffiliatePortalController extends Controller
 
     private function isAdmin(Request $request): bool
     {
-        $user = $request->user();
-        if (! $user) {
+        if ($request->session()->has('affiliate_impersonation')) {
             return false;
         }
 
-        // Simple admin allowlist via env
-        $emails = array_filter(array_map('trim', explode(',', (string) env('AFFILIATE_ADMIN_EMAILS', ''))));
+        return (bool) $request->user()?->hasAffiliateAdminAccess();
+    }
 
-        return in_array((string) $user->email, $emails, true);
+    private function productDefaultRedirect(string $product): string
+    {
+        $policy = app(\App\Services\AffiliateCommissionPolicy::class);
+        $normalizedProduct = $policy->normalizeProduct($product);
+
+        if (! in_array($normalizedProduct, ['esim', 'vpn', 'antivirus'], true)) {
+            $normalizedProduct = 'esim';
+        }
+
+        return (string) config(
+            'affiliate.products.'.$normalizedProduct.'.default_redirect_url',
+            config('affiliate.products.esim.default_redirect_url')
+        );
+    }
+
+    private function campaignDestination(AffiliateCampaign $campaign): string
+    {
+        $stored = trim((string) $campaign->redirect_url);
+
+        return $stored !== ''
+            ? $stored
+            : $this->productDefaultRedirect((string) ($campaign->product ?: 'esim'));
+    }
+
+    private function campaignTrackingUrl(Affiliate $affiliate, ?AffiliateCampaign $campaign = null): string
+    {
+        $params = [];
+
+        if ($campaign) {
+            $params = array_filter([
+                'src' => $campaign->source,
+                'campaign' => $campaign->name,
+                'sub1' => $campaign->sub_id1,
+                'sub2' => $campaign->sub_id2,
+                'product' => $campaign->product,
+                'redirect' => $this->campaignDestination($campaign),
+            ], static fn ($value) => $value !== null && $value !== '');
+        }
+
+        $url = route('affiliate.track.public', ['code' => $affiliate->public_code]);
+        $query = http_build_query($params);
+
+        return $query === '' ? $url : $url . '?' . $query;
+    }
+
+    public function onboarding(Request $request)
+    {
+        $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
+        if ($admin) {
+            return redirect()->route('affiliate.admin.dashboard');
+        }
+
+        $campaign = null;
+        $trackingUrl = null;
+        $onboardingCommissionRates = [];
+
+        if ($currentAffiliate) {
+            $campaign = AffiliateCampaign::query()
+                ->where('affiliate_id', (int) $currentAffiliate->id)
+                ->oldest('created_at')
+                ->first();
+
+            if ($campaign) {
+                $trackingUrl = $this->campaignTrackingUrl($currentAffiliate, $campaign);
+            }
+
+            $policy = app(\App\Services\AffiliateCommissionPolicy::class);
+            foreach (['esim', 'vpn', 'antivirus'] as $product) {
+                $onboardingCommissionRates[$product] = [
+                    'initial' => (float) $policy->effectiveRate((int) $currentAffiliate->id, $product, 'initial')['rate'],
+                    'recurring' => (float) $policy->effectiveRate((int) $currentAffiliate->id, $product, 'recurring')['rate'],
+                ];
+            }
+        }
+
+        $step = ! $currentAffiliate ? 2 : (! $campaign ? 3 : 4);
+
+        return view('affiliate-onboarding', [
+            'currentAffiliate' => $currentAffiliate,
+            'campaign' => $campaign,
+            'trackingUrl' => $trackingUrl,
+            'setupStep' => $step,
+            'onboardingCommissionRates' => $onboardingCommissionRates,
+            'productDefaultDestinations' => [
+                'esim' => $this->productDefaultRedirect('esim'),
+                'vpn' => $this->productDefaultRedirect('vpn'),
+                'antivirus' => $this->productDefaultRedirect('antivirus'),
+            ],
+            'isAdmin' => false,
+        ]);
     }
 
     /**
@@ -75,6 +168,10 @@ class AffiliatePortalController extends Controller
         $currentAffiliate = $this->resolvedAffiliate($request);
         $admin = $this->isAdmin($request);
 
+        if ($admin) {
+            return redirect()->route('affiliate.admin.dashboard');
+        }
+
         $needsAffiliateSetup = false;
 
         if ($currentAffiliate) {
@@ -83,25 +180,34 @@ class AffiliatePortalController extends Controller
             $totalAffiliates = 1;
             $totalClicks = AffiliateClick::where('affiliate_id', $aid)->count();
             $totalSessions = AffiliateSession::where('affiliate_id', $aid)->count();
-            $totalEarnings = AffiliateCommission::where('affiliate_id', $aid)->sum('amount');
+            $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
+            $totalEarnings = AffiliateCommission::where('affiliate_id', $aid)->whereIn('status', $validCommissionStatuses)->sum('amount');
+            $totalConversions = AffiliateCommission::where('affiliate_id', $aid)->whereIn('status', $validCommissionStatuses)->count();
+            $campaignCount = AffiliateCampaign::where('affiliate_id', $aid)->count();
+            $primaryCampaign = AffiliateCampaign::where('affiliate_id', $aid)->oldest('created_at')->first();
+            $quickTrackingUrl = $primaryCampaign ? $this->campaignTrackingUrl($currentAffiliate, $primaryCampaign) : null;
+            $conversionRate = $totalClicks > 0 ? round(($totalConversions / $totalClicks) * 100, 2) : 0;
 
             $clicksLast30 = AffiliateClick::where('affiliate_id', $aid)
                 ->where('created_at', '>=', now()->subDays(30))
                 ->count();
 
             $salesLast30 = AffiliateCommission::where('affiliate_id', $aid)
+                ->whereIn('status', $validCommissionStatuses)
                 ->where('created_at', '>=', now()->subDays(30))
                 ->count();
 
-            $pendingPayouts = AffiliatePayout::where('affiliate_id', $aid)
+            $pendingCommission = AffiliateCommission::where('affiliate_id', $aid)
                 ->where('status', 'pending')
                 ->sum('amount');
 
-            $paidPayouts = AffiliatePayout::where('affiliate_id', $aid)
-                ->where('status', 'paid')
+            $approvedCommission = AffiliateCommission::where('affiliate_id', $aid)
+                ->where('status', 'approved')
                 ->sum('amount');
 
-            $latestAffiliates = collect([$currentAffiliate]);
+            $paidCommission = AffiliateCommission::where('affiliate_id', $aid)
+                ->where('status', 'paid_out')
+                ->sum('amount');
 
             $latestSales = AffiliateCommission::with('affiliate')
                 ->where('affiliate_id', $aid)
@@ -109,68 +215,25 @@ class AffiliatePortalController extends Controller
                 ->take(10)
                 ->get();
 
-            $recentPayouts = AffiliatePayout::with('affiliate')
-                ->where('affiliate_id', $aid)
-                ->latest()
-                ->take(5)
-                ->get();
-
             return view('affiliate-dashboard', compact(
                 'totalAffiliates',
                 'totalClicks',
                 'totalSessions',
                 'totalEarnings',
+                'totalConversions',
                 'clicksLast30',
                 'salesLast30',
-                'pendingPayouts',
-                'paidPayouts',
-                'latestAffiliates',
+                'pendingCommission',
+                'approvedCommission',
+                'paidCommission',
                 'latestSales',
-                'recentPayouts',
                 'currentAffiliate',
-                'needsAffiliateSetup'
-            ));
-        }
-
-        if ($admin) {
-            // Admin: system-wide
-            $totalAffiliates  = Affiliate::count();
-            $totalClicks      = AffiliateClick::count();
-            $totalSessions    = AffiliateSession::count();
-            $totalEarnings    = AffiliateCommission::sum('amount');
-
-            $clicksLast30     = AffiliateClick::where('created_at', '>=', now()->subDays(30))->count();
-            $salesLast30      = AffiliateCommission::where('created_at', '>=', now()->subDays(30))->count();
-
-            $pendingPayouts   = AffiliatePayout::where('status', 'pending')->sum('amount');
-            $paidPayouts      = AffiliatePayout::where('status', 'paid')->sum('amount');
-
-            $latestAffiliates = Affiliate::latest()->take(5)->get();
-
-            $latestSales      = AffiliateCommission::with('affiliate')
-                ->latest()
-                ->take(10)
-                ->get();
-
-            $recentPayouts    = AffiliatePayout::with('affiliate')
-                ->latest()
-                ->take(5)
-                ->get();
-
-            return view('affiliate-dashboard', compact(
-                'totalAffiliates',
-                'totalClicks',
-                'totalSessions',
-                'totalEarnings',
-                'clicksLast30',
-                'salesLast30',
-                'pendingPayouts',
-                'paidPayouts',
-                'latestAffiliates',
-                'latestSales',
-                'recentPayouts',
-                'currentAffiliate',
-                'needsAffiliateSetup'
+                'needsAffiliateSetup',
+                'admin',
+                'campaignCount',
+                'primaryCampaign',
+                'quickTrackingUrl',
+                'conversionRate'
             ));
         }
 
@@ -181,74 +244,57 @@ class AffiliatePortalController extends Controller
         $totalClicks = 0;
         $totalSessions = 0;
         $totalEarnings = 0;
+        $totalConversions = 0;
 
         $clicksLast30 = 0;
         $salesLast30 = 0;
 
-        $pendingPayouts = 0;
-        $paidPayouts = 0;
+        $pendingCommission = 0;
+        $approvedCommission = 0;
+        $paidCommission = 0;
 
-        $latestAffiliates = collect();
         $latestSales = collect();
-        $recentPayouts = collect();
+        $campaignCount = 0;
+        $primaryCampaign = null;
+        $quickTrackingUrl = null;
+        $conversionRate = 0;
 
         return view('affiliate-dashboard', compact(
             'totalAffiliates',
             'totalClicks',
             'totalSessions',
             'totalEarnings',
+            'totalConversions',
             'clicksLast30',
             'salesLast30',
-            'pendingPayouts',
-            'paidPayouts',
-            'latestAffiliates',
+            'pendingCommission',
+            'approvedCommission',
+            'paidCommission',
             'latestSales',
-            'recentPayouts',
             'currentAffiliate',
-            'needsAffiliateSetup'
+            'needsAffiliateSetup',
+            'admin',
+            'campaignCount',
+            'primaryCampaign',
+            'quickTrackingUrl',
+            'conversionRate'
         ));
     }
 
     /**
-     * Affiliates page:
-     * - Admin sees all
-     * - Normal user sees only their affiliate (or empty)
+     * Keep the old profile URL useful without exposing a duplicate workspace.
      */
     public function affiliatesIndex(Request $request)
     {
-        $currentAffiliate = $this->resolvedAffiliate($request);
-        $admin = $this->isAdmin($request);
-
-        $search = $request->query('q');
-
-        $query = Affiliate::query()->orderByDesc('created_at');
-
-        if (! $admin) {
-            // Non-admin: only own affiliate or none
-            if ($currentAffiliate) {
-                $query->where('id', (int) $currentAffiliate->id);
-            } else {
-                // Return empty result set safely
-                $query->whereRaw('1 = 0');
-            }
+        if ($this->isAdmin($request)) {
+            return redirect()->route('affiliate.admin.affiliates.index');
         }
 
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhere('public_code', 'like', "%{$search}%");
-            });
+        if (! $this->resolvedAffiliate($request)) {
+            return redirect()->route('affiliate.onboarding');
         }
 
-        $affiliates = $query->paginate(25)->withQueryString();
-
-        return view('affiliate-affiliates', [
-            'affiliates' => $affiliates,
-            'search'     => $search,
-            'currentAffiliate' => $currentAffiliate,
-            'isAdmin' => $admin,
-        ]);
+        return redirect()->route('affiliate.settings');
     }
 
     /**
@@ -261,31 +307,37 @@ class AffiliatePortalController extends Controller
         $admin = $this->isAdmin($request);
         $user = $request->user();
 
+        if ($admin && ! $user?->canManageAffiliateProgram()) {
+            abort(403, 'You do not have permission to create affiliates.');
+        }
+
         if (! $user) {
-            abort(401, 'Not authenticated');
+            abort(401, 'Please log in.');
         }
 
         // If non-admin already has an affiliate, stop.
         $existing = Affiliate::where('external_user_id', $user->id)->first();
         if (! $admin && $existing) {
             return redirect()
-                ->route('affiliate.affiliates.index')
-                ->with('status', 'Affiliate already exists for this user.');
+                ->route('affiliate.onboarding')
+                ->with('status', 'Your affiliate profile is ready. Continue setup.');
         }
 
         $data = $request->validate([
             'name'              => ['required', 'string', 'max:255'],
-            'email'             => [$admin ? 'nullable' : 'nullable', 'email', 'max:255'],
+            'email'             => ['nullable', 'email', 'max:255'],
             'public_code'       => ['nullable', 'string', 'max:50', 'unique:affiliates,public_code'],
-            'base_redirect_url' => ['nullable', 'string', 'max:2048'],
+            'base_redirect_url' => ['nullable', 'url:http,https', 'max:2048'],
             'is_active'         => ['nullable', 'boolean'],
         ]);
 
         if (empty($data['public_code'])) {
-            $data['public_code'] = strtoupper(Str::random(8));
+            do {
+                $data['public_code'] = strtoupper(Str::random(8));
+            } while (Affiliate::where('public_code', $data['public_code'])->exists());
         }
 
-        $isActive = $request->boolean('is_active', true);
+        $isActive = $admin ? $request->boolean('is_active') : true;
 
         $affiliate = new Affiliate();
         $affiliate->name = $data['name'];
@@ -315,8 +367,14 @@ class AffiliatePortalController extends Controller
         // Attach to request for this session navigation
         $request->attributes->set('affiliate', $affiliate);
 
+        if (! $admin) {
+            return redirect()
+                ->route('affiliate.onboarding')
+                ->with('status', 'Profile created. Create your first campaign.');
+        }
+
         return redirect()
-            ->route('affiliate.dashboard')
+            ->route('affiliate.admin.affiliates.index')
             ->with('status', 'Affiliate created.');
     }
 
@@ -325,9 +383,24 @@ class AffiliatePortalController extends Controller
         $currentAffiliate = $this->resolvedAffiliate($request);
         $admin = $this->isAdmin($request);
 
+        if ($admin) {
+            return redirect()->route('affiliate.admin.campaigns.index');
+        }
+
+        if (! $currentAffiliate) {
+            return redirect()->route('affiliate.onboarding');
+        }
+
         $search = $request->query('q');
 
-        $query = AffiliateCampaign::with('affiliate')->orderByDesc('created_at');
+        $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
+
+        $query = AffiliateCampaign::query()
+            ->with('affiliate')
+            ->withCount('clicks')
+            ->withCount(['commissions as conversions_count' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)])
+            ->withSum(['commissions as commission_total' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)], 'amount')
+            ->orderByDesc('created_at');
 
         if ($currentAffiliate) {
             $query->where('affiliate_id', (int) $currentAffiliate->id);
@@ -357,12 +430,34 @@ class AffiliatePortalController extends Controller
             $affiliates = collect();
         }
 
+        $policy = app(\App\Services\AffiliateCommissionPolicy::class);
+        $campaignCommissionRates = [];
+        foreach (['esim', 'vpn', 'antivirus'] as $product) {
+            $initial = $currentAffiliate
+                ? $policy->effectiveRate((int) $currentAffiliate->id, $product, 'initial')
+                : $policy->globalRate($product, 'initial');
+            $recurring = $currentAffiliate
+                ? $policy->effectiveRate((int) $currentAffiliate->id, $product, 'recurring')
+                : $policy->globalRate($product, 'recurring');
+
+            $campaignCommissionRates[$product] = [
+                'initial' => (float) $initial['rate'],
+                'recurring' => (float) $recurring['rate'],
+            ];
+        }
+
         return view('affiliate-campaigns', [
             'campaigns'  => $campaigns,
             'affiliates' => $affiliates,
             'search'     => $search,
             'currentAffiliate' => $currentAffiliate,
             'isAdmin' => $admin,
+            'campaignCommissionRates' => $campaignCommissionRates,
+            'productDefaultDestinations' => [
+                'esim' => $this->productDefaultRedirect('esim'),
+                'vpn' => $this->productDefaultRedirect('vpn'),
+                'antivirus' => $this->productDefaultRedirect('antivirus'),
+            ],
         ]);
     }
 
@@ -371,18 +466,24 @@ class AffiliatePortalController extends Controller
         $currentAffiliate = $this->resolvedAffiliate($request);
         $admin = $this->isAdmin($request);
 
+        if ($admin && ! $request->user()?->canManageAffiliateProgram()) {
+            abort(403, 'You do not have permission to create campaigns.');
+        }
+
         if (! $currentAffiliate && ! $admin) {
             return redirect()
-                ->route('affiliate.affiliates.index')
-                ->with('status', 'Create your affiliate first.');
+                ->route('affiliate.onboarding')
+                ->with('status', 'Complete your affiliate profile first.');
         }
 
         $rules = [
             'affiliate_id' => $admin ? ['required', 'exists:affiliates,id'] : ['nullable'],
             'name'         => ['required', 'string', 'max:255'],
-            'source'       => ['nullable', 'string', 'max:50'],
+            'source'       => ['required', Rule::in(['youtube', 'instagram', 'tiktok', 'blog', 'newsletter', 'other'])],
             'sub_id1'      => ['nullable', 'string', 'max:255'],
             'sub_id2'      => ['nullable', 'string', 'max:255'],
+            'product'      => ['nullable', 'string', Rule::in(['esim', 'vpn', 'antivirus'])],
+            'redirect_url' => ['nullable', 'url:http,https', 'max:2048'],
         ];
 
         $data = $request->validate($rules);
@@ -391,11 +492,105 @@ class AffiliatePortalController extends Controller
             $data['affiliate_id'] = (int) $currentAffiliate->id;
         }
 
+        $data['name'] = trim($data['name']);
+        $data['source'] = strtolower(trim((string) ($data['source'] ?? ''))) ?: 'other';
+
+        $policy = app(\App\Services\AffiliateCommissionPolicy::class);
+        $data['product'] = $policy->normalizeProduct((string) ($data['product'] ?? 'esim'));
+        $resolvedRate = $policy->effectiveRate((int) $data['affiliate_id'], $data['product'], 'initial');
+        $data['commission_rate'] = (float) $resolvedRate['rate'];
+        $data['redirect_url'] = trim((string) ($data['redirect_url'] ?? ''))
+            ?: $this->productDefaultRedirect($data['product']);
+
+        $duplicate = AffiliateCampaign::query()
+            ->where('affiliate_id', (int) $data['affiliate_id'])
+            ->where('name', $data['name'])
+            ->exists();
+
+        if ($duplicate) {
+            return back()
+                ->withErrors(['name' => 'You already have a campaign with this name.'])
+                ->withInput();
+        }
+
         AffiliateCampaign::create($data);
+
+        if (! $admin && $request->input('return_to') === 'onboarding') {
+            return redirect()
+                ->route('affiliate.onboarding')
+                ->with('status', 'Campaign created. Your tracking link is ready.');
+        }
 
         return redirect()
             ->route('affiliate.campaigns.index')
-            ->with('status', 'Campaign created successfully!');
+            ->with('status', 'Campaign created.');
+    }
+
+    public function campaignUpdate(Request $request, AffiliateCampaign $campaign)
+    {
+        $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
+        if ($admin && ! $request->user()?->canManageAffiliateProgram()) {
+            abort(403, 'You do not have permission to update campaigns.');
+        }
+
+        if (! $admin && (! $currentAffiliate || (int) $campaign->affiliate_id !== (int) $currentAffiliate->id)) {
+            abort(404);
+        }
+
+        $affiliateId = (int) $campaign->affiliate_id;
+        $data = $request->validate([
+            'source' => ['required', Rule::in(['youtube', 'instagram', 'tiktok', 'blog', 'newsletter', 'other'])],
+            'product' => ['required', Rule::in(['esim', 'vpn', 'antivirus'])],
+            'redirect_url' => ['nullable', 'url:http,https', 'max:2048'],
+            'sub_id1' => ['nullable', 'string', 'max:255'],
+            'sub_id2' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $policy = app(\App\Services\AffiliateCommissionPolicy::class);
+        $product = $policy->normalizeProduct((string) $data['product']);
+        $resolvedRate = $policy->effectiveRate($affiliateId, $product, 'initial');
+
+        $subId1 = trim((string) ($data['sub_id1'] ?? ''));
+        $subId2 = trim((string) ($data['sub_id2'] ?? ''));
+
+        $campaign->fill([
+            'source' => $data['source'],
+            'product' => $product,
+            'commission_rate' => (float) $resolvedRate['rate'],
+            'redirect_url' => trim((string) ($data['redirect_url'] ?? '')) ?: $this->productDefaultRedirect($product),
+            'sub_id1' => $subId1 !== '' ? $subId1 : null,
+            'sub_id2' => $subId2 !== '' ? $subId2 : null,
+        ])->save();
+
+        return back()->with('status', 'Campaign updated.');
+    }
+
+    public function campaignDestinationUpdate(Request $request, AffiliateCampaign $campaign)
+    {
+        $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
+        if ($admin && ! $request->user()?->canManageAffiliateProgram()) {
+            abort(403, 'You do not have permission to update campaigns.');
+        }
+
+        if (! $admin) {
+            if (! $currentAffiliate || (int) $campaign->affiliate_id !== (int) $currentAffiliate->id) {
+                abort(404);
+            }
+        }
+
+        $data = $request->validate([
+            'redirect_url' => ['nullable', 'url:http,https', 'max:2048'],
+        ]);
+
+        $campaign->redirect_url = trim((string) ($data['redirect_url'] ?? ''))
+            ?: $this->productDefaultRedirect((string) ($campaign->product ?: 'esim'));
+        $campaign->save();
+
+        return back()->with('status', 'Destination updated.');
     }
 
     public function analytics(Request $request)
@@ -404,26 +599,20 @@ class AffiliatePortalController extends Controller
         $admin = $this->isAdmin($request);
         $from = now()->subDays(30);
 
-        // If no affiliate and not admin => empty analytics
-        if (! $currentAffiliate && ! $admin) {
-            return view('affiliate-analytics', [
-                'clicksLast30' => 0,
-                'sessionsLast30' => 0,
-                'salesLast30' => 0,
-                'revenueLast30' => 0,
-                'conversionRate' => 0,
-                'epc' => 0,
-                'topAffiliates' => collect(),
-                'daily' => [],
-                'currentAffiliate' => null,
-                'isAdmin' => false,
-                'needsAffiliateSetup' => true,
-            ]);
+        if ($admin) {
+            return redirect()->route('affiliate.admin.dashboard');
+        }
+
+        if (! $currentAffiliate) {
+            return redirect()->route('affiliate.onboarding');
         }
 
         $clicksQ = AffiliateClick::query()->where('created_at', '>=', $from);
         $sessionsQ = AffiliateSession::query()->where('created_at', '>=', $from);
-        $salesQ = AffiliateCommission::query()->where('created_at', '>=', $from);
+        $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
+        $salesQ = AffiliateCommission::query()
+            ->whereIn('status', $validCommissionStatuses)
+            ->where('created_at', '>=', $from);
 
         if ($currentAffiliate) {
             $aid = (int) $currentAffiliate->id;
@@ -446,6 +635,7 @@ class AffiliatePortalController extends Controller
                 DB::raw('COUNT(*) as sales_count'),
                 DB::raw('SUM(amount) as total_commission')
             )
+            ->whereIn('status', $validCommissionStatuses)
             ->where('created_at', '>=', $from);
 
         if ($currentAffiliate) {
@@ -468,7 +658,8 @@ class AffiliatePortalController extends Controller
         $dailySalesQ = AffiliateCommission::select(
             DB::raw('DATE(created_at) as day'),
             DB::raw('COUNT(*) as sales')
-        )->where('created_at', '>=', $from7);
+        )->whereIn('status', $validCommissionStatuses)
+            ->where('created_at', '>=', $from7);
 
         if ($currentAffiliate) {
             $aid = (int) $currentAffiliate->id;
@@ -487,6 +678,12 @@ class AffiliatePortalController extends Controller
             ->orderBy('day')
             ->get()
             ->keyBy('day');
+
+        $recentConversionsQ = AffiliateCommission::with('affiliate')->latest();
+        if ($currentAffiliate) {
+            $recentConversionsQ->where('affiliate_id', (int) $currentAffiliate->id);
+        }
+        $recentConversions = $recentConversionsQ->take(10)->get();
 
         $daily = [];
         $cursor = $from7->copy();
@@ -508,6 +705,7 @@ class AffiliatePortalController extends Controller
             'conversionRate' => $conversionRate,
             'epc'            => $epc,
             'topAffiliates'  => $topAffiliates,
+            'recentConversions' => $recentConversions,
             'daily'          => $daily,
             'currentAffiliate' => $currentAffiliate,
             'isAdmin' => $admin,
@@ -520,17 +718,12 @@ class AffiliatePortalController extends Controller
         $currentAffiliate = $this->resolvedAffiliate($request);
         $admin = $this->isAdmin($request);
 
-        if (! $currentAffiliate && ! $admin) {
-            return view('affiliate-payouts', [
-                'payouts' => collect(),
-                'totalPaid' => 0,
-                'totalPending' => 0,
-                'lastPayout' => null,
-                'currentStatusFilter' => null,
-                'currentAffiliate' => null,
-                'isAdmin' => false,
-                'needsAffiliateSetup' => true,
-            ]);
+        if ($admin) {
+            return redirect()->route('affiliate.admin.payouts.index');
+        }
+
+        if (! $currentAffiliate) {
+            return redirect()->route('affiliate.onboarding');
         }
 
         $status = $request->query('status');
@@ -547,17 +740,20 @@ class AffiliatePortalController extends Controller
 
         $payouts = $query->paginate(25)->withQueryString();
 
-        $totalPaidQ = AffiliatePayout::where('status', 'paid');
-        $totalPendingQ = AffiliatePayout::where('status', 'pending');
+        $availableCommissionQ = AffiliateCommission::where('status', 'approved');
+        $pendingCommissionQ = AffiliateCommission::where('status', 'pending');
+        $paidCommissionQ = AffiliateCommission::where('status', 'paid_out');
 
         if ($currentAffiliate) {
             $aid = (int) $currentAffiliate->id;
-            $totalPaidQ->where('affiliate_id', $aid);
-            $totalPendingQ->where('affiliate_id', $aid);
+            $availableCommissionQ->where('affiliate_id', $aid);
+            $pendingCommissionQ->where('affiliate_id', $aid);
+            $paidCommissionQ->where('affiliate_id', $aid);
         }
 
-        $totalPaid = $totalPaidQ->sum('amount');
-        $totalPending = $totalPendingQ->sum('amount');
+        $availableCommission = $availableCommissionQ->sum('amount');
+        $pendingCommission = $pendingCommissionQ->sum('amount');
+        $paidCommission = $paidCommissionQ->sum('amount');
 
         $lastPayoutQ = AffiliatePayout::where('status', 'paid')->orderByDesc('created_at');
         if ($currentAffiliate) {
@@ -567,8 +763,9 @@ class AffiliatePortalController extends Controller
 
         return view('affiliate-payouts', [
             'payouts'              => $payouts,
-            'totalPaid'            => $totalPaid,
-            'totalPending'         => $totalPending,
+            'availableCommission'  => $availableCommission,
+            'pendingCommission'    => $pendingCommission,
+            'paidCommission'       => $paidCommission,
             'lastPayout'           => $lastPayout,
             'currentStatusFilter'  => $status,
             'currentAffiliate' => $currentAffiliate,
@@ -582,26 +779,18 @@ class AffiliatePortalController extends Controller
         $currentAffiliate = $this->resolvedAffiliate($request);
         $admin = $this->isAdmin($request);
 
-        if (! $currentAffiliate && ! $admin) {
-            return view('affiliate-sales', [
-                'sales' => collect(),
-                'totalCommission' => 0,
-                'totalSalesCount' => 0,
-                'avgCommission' => 0,
-                'last30Commission' => 0,
-                'last30Count' => 0,
-                'currentStatusFilter' => null,
-                'currentProductFilter' => null,
-                'currentAffiliateCode' => null,
-                'currentAffiliate' => null,
-                'isAdmin' => false,
-                'needsAffiliateSetup' => true,
-            ]);
+        if ($admin) {
+            return redirect()->route('affiliate.admin.commissions.index');
+        }
+
+        if (! $currentAffiliate) {
+            return redirect()->route('affiliate.onboarding');
         }
 
         $status  = $request->query('status');
-        $product = $request->query('product');
+        $type = $request->query('type');
         $affiliateCode = $request->query('affiliate'); // admin-only filter
+        $product = trim((string) $request->query('product'));
 
         $query = AffiliateCommission::with('affiliate')->orderByDesc('created_at');
 
@@ -613,18 +802,24 @@ class AffiliatePortalController extends Controller
             });
         }
 
-        if ($status && in_array($status, ['pending', 'approved', 'rejected', 'paid'], true)) {
+        if ($status && in_array($status, ['pending', 'approved', 'rejected', 'paid_out'], true)) {
             $query->where('status', $status);
         }
 
-        if ($product) {
-            $query->where('product', $product);
+        if ($type && in_array($type, ['initial', 'recurring'], true)) {
+            $query->where('type', $type);
+        }
+
+        if ($product !== '') {
+            $query->where('product', app(\App\Services\AffiliateCommissionPolicy::class)->normalizeProduct($product));
         }
 
         $sales = $query->paginate(25)->withQueryString();
 
-        $totalsQ = AffiliateCommission::query();
-        $last30Q = AffiliateCommission::where('created_at', '>=', now()->subDays(30));
+        $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
+        $totalsQ = AffiliateCommission::query()->whereIn('status', $validCommissionStatuses);
+        $last30Q = AffiliateCommission::whereIn('status', $validCommissionStatuses)
+            ->where('created_at', '>=', now()->subDays(30));
 
         if ($currentAffiliate) {
             $aid = (int) $currentAffiliate->id;
@@ -650,11 +845,65 @@ class AffiliatePortalController extends Controller
             'last30Commission'     => $last30Commission,
             'last30Count'          => $last30Count,
             'currentStatusFilter'  => $status,
-            'currentProductFilter' => $product,
+            'currentTypeFilter'    => $type,
             'currentAffiliateCode' => $affiliateCode,
+            'currentProductFilter' => $product,
             'currentAffiliate' => $currentAffiliate,
             'isAdmin' => $admin,
             'needsAffiliateSetup' => false,
+        ]);
+    }
+
+    public function orderShow(Request $request, int $commission)
+    {
+        $currentAffiliate = $this->resolvedAffiliate($request);
+        $admin = $this->isAdmin($request);
+
+        if (! $currentAffiliate && ! $admin) {
+            abort(404);
+        }
+
+        $commissionQuery = AffiliateCommission::with('affiliate')->whereKey($commission);
+
+        // Ownership is checked against the local conversion before any Commerce API request.
+        // A normal affiliate can therefore never use this endpoint as an arbitrary order lookup.
+        if (! $admin && $currentAffiliate) {
+            $commissionQuery->where('affiliate_id', (int) $currentAffiliate->id);
+        } elseif (! $admin) {
+            $commissionQuery->whereRaw('1 = 0');
+        }
+
+        $affiliateCommission = $commissionQuery->firstOrFail();
+        $orderId = trim((string) $affiliateCommission->getRawOriginal('order_id'));
+
+        if ($orderId === '') {
+            abort(404);
+        }
+
+        $order = null;
+        $orderError = null;
+
+        try {
+            /** @var AffiliateOrderService $orders */
+            $orders = app(AffiliateOrderService::class);
+            $order = $orders->getAffiliateOrder($orderId);
+        } catch (\Throwable $exception) {
+            Log::warning('Affiliate order lookup failed.', [
+                'commission_id' => $affiliateCommission->id,
+                'order_id' => $orderId,
+                'exception' => $exception::class,
+            ]);
+
+            $orderError = 'Order details are temporarily unavailable. Try again in a moment.';
+        }
+
+        return view('affiliate-order', [
+            'commission' => $affiliateCommission,
+            'orderId' => $orderId,
+            'order' => $order,
+            'orderError' => $orderError,
+            'currentAffiliate' => $currentAffiliate,
+            'isAdmin' => $admin,
         ]);
     }
 
@@ -663,40 +912,45 @@ class AffiliatePortalController extends Controller
         $currentAffiliate = $this->resolvedAffiliate($request);
         $admin = $this->isAdmin($request);
 
-        if (! $currentAffiliate && ! $admin) {
-            // Let them see settings page if you want, but it should be empty / CTA
-            return view('affiliate-settings', [
-                'currentAffiliate' => null,
-                'isAdmin' => false,
-                'needsAffiliateSetup' => true,
-            ]);
+        if ($admin) {
+            return redirect()->route('affiliate.admin.dashboard');
         }
+
+        if (! $currentAffiliate) {
+            return redirect()->route('affiliate.onboarding');
+        }
+
+        $rateMatrix = $currentAffiliate
+            ? app(\App\Services\AffiliateCommissionPolicy::class)->matrix((int) $currentAffiliate->id)
+            : app(\App\Services\AffiliateCommissionPolicy::class)->matrix();
 
         return view('affiliate-settings', [
             'currentAffiliate' => $currentAffiliate,
             'isAdmin' => $admin,
             'needsAffiliateSetup' => false,
+            'rateMatrix' => $rateMatrix,
+            'esimFeedUrl' => (string) config('affiliate.resources.esim_feed_url'),
         ]);
     }
 
     // Legacy stubs (keeps old routes from exploding)
     public function campaigns()
     {
-        return view('affiliate-campaigns');
+        return redirect()->route('affiliate.campaigns.index');
     }
 
     public function clicks()
     {
-        return view('affiliate-analytics');
+        return redirect()->route('affiliate.analytics');
     }
 
     public function sessions()
     {
-        return view('affiliate-analytics');
+        return redirect()->route('affiliate.analytics');
     }
 
     public function commissions()
     {
-        return view('affiliate-sales');
+        return redirect()->route('affiliate.sales');
     }
 }

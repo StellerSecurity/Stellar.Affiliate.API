@@ -1,105 +1,104 @@
 @extends('layouts.affiliate')
 
-@section('title', 'Affiliate Settings · Stellar')
+@section('title', 'Settings · Stellar Affiliate')
 
 @section('content')
-
-    {{-- Page heading --}}
-    <section class="mb-4">
-        <h1 class="text-[13px] font-semibold text-slate-100">Affiliate Settings</h1>
-        <p class="text-[11px] text-slate-400">
-            Configure how tracking behaves, default landing URLs, and upcoming admin features.
-        </p>
+    <section class="stellar-page-header">
+        <div>
+            <p class="stellar-eyebrow">Workspace</p>
+            <h1 class="stellar-page-title">Settings</h1>
+            <p class="stellar-page-copy">Your affiliate details, commission rates and resources.</p>
+        </div>
     </section>
 
-    <section class="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 space-y-6">
-
-        {{-- Default redirect URL --}}
-        <div class="space-y-2">
-            <p class="text-[11px] font-semibold text-slate-200">Default redirect URL</p>
-            <p class="text-[10px] text-slate-400 mb-2">
-                This is where users land after clicking an affiliate link, unless a custom link is set by the affiliate.
-            </p>
-
-            <form method="POST" action="#">
-                @csrf
-                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                    <input
-                        type="text"
-                        name="default_redirect"
-                        value="{{ $defaultRedirect ?? 'https://stellarvpn.org/' }}"
-                        class="w-full sm:w-96 rounded-2xl bg-slate-950 border border-slate-700 px-3 py-2 text-[11px] text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-
-                    <button
-                        type="submit"
-                        class="rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 px-4 py-2 text-[11px] font-semibold text-white shadow-lg shadow-blue-500/20 hover:opacity-90 transition">
-                        Save
-                    </button>
+    @if($needsAffiliateSetup ?? false)
+        <section class="stellar-card stellar-empty">
+            <div>
+                <h3>Finish your affiliate setup</h3>
+                <p>Complete setup to see your affiliate code, rates and resources.</p>
+                <div class="stellar-actions" style="justify-content:center">
+                    <a href="{{ route('affiliate.onboarding') }}" class="stellar-btn stellar-btn-primary">Continue setup</a>
                 </div>
-            </form>
-        </div>
-
-        <hr class="border-slate-800 my-6" />
-
-        {{-- Commission Structure --}}
-        <div class="space-y-2">
-            <p class="text-[11px] font-semibold text-slate-200">Commission structure</p>
-            <p class="text-[10px] text-slate-400 mb-2">
-                A summary of how affiliates get paid.
-            </p>
-
-            <div class="grid md:grid-cols-3 gap-3">
-
-                <div class="rounded-2xl bg-slate-950/70 border border-slate-800 p-4">
-                    <p class="text-[11px] font-semibold text-blue-400">Initial commission</p>
-                    <p class="text-[22px] font-bold text-blue-300 mt-1">100%</p>
-                    <p class="text-[10px] text-slate-400 mt-1">
-                        Affiliates earn the full first payment from every customer they refer.
-                    </p>
-                </div>
-
-                <div class="rounded-2xl bg-slate-950/70 border border-slate-800 p-4">
-                    <p class="text-[11px] font-semibold text-emerald-400">Recurring commission</p>
-                    <p class="text-[22px] font-bold text-emerald-300 mt-1">60%</p>
-                    <p class="text-[10px] text-slate-400 mt-1">
-                        On every renewal — forever. True lifetime recurring income.
-                    </p>
-                </div>
-
-                <div class="rounded-2xl bg-slate-950/70 border border-slate-800 p-4">
-                    <p class="text-[11px] font-semibold text-sky-400">Tracking window</p>
-                    <p class="text-[22px] font-bold text-sky-300 mt-1">180 days</p>
-                    <p class="text-[10px] text-slate-400 mt-1">
-                        The longest referral cookie in the industry. Converts like crazy.
-                    </p>
-                </div>
-
             </div>
-        </div>
+        </section>
+    @else
+        <section class="stellar-grid-2">
+            <article class="stellar-card stellar-card-pad">
+                <p class="stellar-eyebrow">Affiliate profile</p>
+                <h2 class="stellar-section-title">Your account</h2>
+                <div class="stellar-stat-list" style="margin-top:18px">
+                    <div class="stellar-stat-row"><span>Name</span><strong>{{ $currentAffiliate?->name ?: '—' }}</strong></div>
+                    <div class="stellar-stat-row"><span>Email</span><strong>{{ $currentAffiliate?->email ?: '—' }}</strong></div>
+                    <div class="stellar-stat-row"><span>Affiliate code</span><strong>{{ $currentAffiliate?->public_code ?: '—' }}</strong></div>
+                    <div class="stellar-stat-row"><span>Status</span><strong>{{ $currentAffiliate?->status === 'banned' ? 'Disabled' : ucfirst($currentAffiliate?->status ?: 'unknown') }}</strong></div>
+                </div>
+                <p class="stellar-field-help" style="margin-top:16px;">Change the destination for any tracking link from Campaigns.</p>
+                <div class="stellar-actions">
+                    <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Manage campaigns</a>
+                </div>
+            </article>
 
-        <hr class="border-slate-800 my-6" />
+            <article class="stellar-card stellar-card-pad stellar-resource-card">
+                <p class="stellar-eyebrow">eSIM resource</p>
+                <h2 class="stellar-section-title">Product feed</h2>
+                <p class="stellar-section-copy">Use the live eSIM feed on your site, comparison page or storefront.</p>
+                <div class="stellar-resource-url" style="margin-top:18px">{{ $esimFeedUrl }}</div>
+                <div class="stellar-actions">
+                    <a class="stellar-btn stellar-btn-primary" href="{{ $esimFeedUrl }}" target="_blank" rel="noopener noreferrer">Open feed</a>
+                    <button type="button" class="stellar-btn stellar-btn-secondary" data-copy="{{ $esimFeedUrl }}">Copy URL</button>
+                </div>
+            </article>
+        </section>
 
-        {{-- API Keys --}}
-        <div class="space-y-2">
-            <p class="text-[11px] font-semibold text-slate-200">API Keys (coming soon)</p>
-            <p class="text-[10px] text-slate-400 mb-2">
-                Affiliates will be able to generate API keys to pull stats directly.
-            </p>
+        @php
+            $effectiveRates = collect($rateMatrix);
+            $vpnInitial = (float) ($effectiveRates->first(fn ($row) => $row['product'] === 'vpn' && $row['type'] === 'initial')['rate'] ?? 1.00);
+            $vpnRecurring = (float) ($effectiveRates->first(fn ($row) => $row['product'] === 'vpn' && $row['type'] === 'recurring')['rate'] ?? 0.60);
+            $antivirusInitial = (float) ($effectiveRates->first(fn ($row) => $row['product'] === 'antivirus' && $row['type'] === 'initial')['rate'] ?? 1.00);
+            $antivirusRecurring = (float) ($effectiveRates->first(fn ($row) => $row['product'] === 'antivirus' && $row['type'] === 'recurring')['rate'] ?? 0.60);
+            $esimRate = (float) ($effectiveRates->first(fn ($row) => $row['product'] === 'esim')['rate'] ?? 0.10);
+        @endphp
 
-            <div class="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                <p class="text-[10px] text-slate-500 italic">
-                    API key management is not enabled yet.
-                    When active, affiliates will be able to:
-                </p>
-
-                <ul class="mt-2 space-y-1 text-[10px] text-slate-300">
-                    <li>• Generate read-only API keys</li>
-                    <li>• Pull sales, payouts, sessions, clicks</li>
-                    <li>• Build custom dashboards or integrate with CRMs</li>
-                </ul>
+        <section class="stellar-card stellar-card-pad stellar-section">
+            <div class="stellar-section-head">
+                <div>
+                    <p class="stellar-eyebrow">Commission</p>
+                    <h2 class="stellar-section-title">Your rates</h2>
+                    <p class="stellar-section-copy">These are the rates applied to new conversions.</p>
+                </div>
             </div>
-        </div>
+            <div class="stellar-rate-grid">
+                <article class="stellar-rate-card">
+                    <div><strong>Stellar VPN</strong><span>Program rate</span></div>
+                    <div class="stellar-stat-list" style="margin-top:12px">
+                        <div class="stellar-stat-row"><span>First payment</span><strong>{{ rtrim(rtrim(number_format($vpnInitial * 100, 2), '0'), '.') }}%</strong></div>
+                        <div class="stellar-stat-row"><span>Recurring</span><strong>{{ rtrim(rtrim(number_format($vpnRecurring * 100, 2), '0'), '.') }}%</strong></div>
+                    </div>
+                </article>
+                <article class="stellar-rate-card">
+                    <div><strong>Stellar Antivirus</strong><span>Program rate</span></div>
+                    <div class="stellar-stat-list" style="margin-top:12px">
+                        <div class="stellar-stat-row"><span>First payment</span><strong>{{ rtrim(rtrim(number_format($antivirusInitial * 100, 2), '0'), '.') }}%</strong></div>
+                        <div class="stellar-stat-row"><span>Recurring</span><strong>{{ rtrim(rtrim(number_format($antivirusRecurring * 100, 2), '0'), '.') }}%</strong></div>
+                    </div>
+                </article>
+                <article class="stellar-rate-card">
+                    <div><strong>Stellar eSIM</strong><span>Your rate</span></div>
+                    <div class="stellar-rate-value">{{ rtrim(rtrim(number_format($esimRate * 100, 2), '0'), '.') }}%</div>
+                    <div class="stellar-rate-source">Every eSIM sale</div>
+                </article>
+            </div>
+        </section>
 
-    </section>
+        <section class="stellar-card stellar-card-pad stellar-section stellar-support-panel">
+            <div>
+                <p class="stellar-eyebrow">Support</p>
+                <h2 class="stellar-section-title">Need help?</h2>
+                <p class="stellar-section-copy">Questions about tracking links, commissions, orders or payouts? Contact Stellar Security.</p>
+            </div>
+            <div class="stellar-actions">
+                <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}" class="stellar-btn stellar-btn-primary">{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}</a>
+            </div>
+        </section>
+    @endif
 @endsection

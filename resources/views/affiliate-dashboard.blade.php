@@ -1,191 +1,279 @@
 @extends('layouts.affiliate')
 
-@section('title', 'Affiliate Dashboard · Stellar')
+@section('title', 'Dashboard · Stellar Affiliate')
 
 @section('content')
-<section class="grid gap-3 md:grid-cols-4">
-    <div class="rounded-3xl bg-gradient-to-br from-blue-600 via-blue-500 to-sky-400 p-4 shadow-glass">
-        <p class="text-[11px] font-medium text-blue-100">Total earnings (all affiliates)</p>
-        <p class="mt-1 text-2xl font-semibold text-white">
-            €{{ number_format($totalEarnings, 2) }}
-        </p>
-        <p class="mt-2 text-[10px] text-blue-100/80">
-            Based on all approved affiliate commissions.
-        </p>
-    </div>
+    @php
+        $dashboardIsAdmin = (bool) ($admin ?? false);
+        $setupReady = $dashboardIsAdmin || ($currentAffiliate && $campaignCount > 0);
+    @endphp
 
-    <div class="rounded-3xl bg-gradient-to-br from-stellar-blue via-stellar-blueDark to-sky-500/90 p-4 border border-blue-500/50">
-        <p class="text-[11px] font-medium text-blue-100">Total affiliates</p>
-        <p class="mt-1 text-2xl font-semibold text-white">
-            {{ number_format($totalAffiliates) }}
-        </p>
-        <p class="mt-2 text-[10px] text-blue-100/80">
-            Active tracking across Stellar VPN, Antivirus, Notes, and Secret.
-        </p>
-    </div>
-
-    <div class="rounded-3xl bg-slate-900/70 border border-slate-800 p-4">
-        <p class="text-[11px] font-medium text-slate-300">Clicks → Sales (30d)</p>
-        <p class="mt-1 text-xl font-semibold">
-            {{ $clicksLast30 }} → {{ $salesLast30 }}
-        </p>
-        <p class="mt-2 text-[10px] text-slate-400">
-            @php
-                $cr = $clicksLast30 > 0 ? round(($salesLast30 / max($clicksLast30,1)) * 100, 1) : 0;
-            @endphp
-            {{ $cr }}% conversion rate
-        </p>
-    </div>
-
-    <div class="rounded-3xl bg-slate-900/70 border border-slate-800 p-4">
-        <p class="text-[11px] font-medium text-slate-300">Active sessions</p>
-        <p class="mt-1 text-xl font-semibold">{{ number_format($totalSessions) }}</p>
-        <p class="mt-2 text-[10px] text-slate-400">Affiliate sessions with 180-day cookies.</p>
-    </div>
-</section>
-
-<section class="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-    <div class="rounded-3xl border border-slate-800 bg-slate-900/60 p-4">
-        <div class="flex items-center justify-between gap-3">
-            <div>
-                <p class="text-[11px] font-semibold text-slate-200">Earnings (last 30 days)</p>
-                <p class="mt-1 text-[10px] text-slate-400">Initial and recurring commissions.</p>
-            </div>
-            <span class="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-[10px] text-slate-300">
-                Chart placeholder
-            </span>
-        </div>
-        <div class="mt-4 h-40 rounded-2xl bg-gradient-to-b from-slate-800/70 to-slate-950 border border-slate-800 flex items-center justify-center text-[10px] text-slate-500">
-            Connect this block to a chart library later.
-        </div>
-    </div>
-
-    <div class="space-y-3">
-        <div class="rounded-3xl border border-slate-800 bg-slate-900/60 p-4">
-            <p class="text-[11px] font-semibold text-slate-200">Payout overview</p>
-            <p>                * This data can take some days to update.
-            </p>
-            <p class="mt-1 text-xl font-semibold text-emerald-400">
-                Available: €{{ number_format($pendingPayouts, 2) }}
-            </p>
-            <p class="mt-1 text-[10px] text-slate-400">
-                Total paid out: €{{ number_format($paidPayouts, 2) }}
-            </p>
-        </div>
-
-        <div class="rounded-3xl border border-slate-800 bg-slate-900/60 p-4">
-            <p class="text-[11px] font-semibold text-slate-200">System stats</p>
-            <p class="mt-2 text-[10px] text-slate-400">
-                {{ number_format($totalClicks) }} total clicks ·
-                {{ number_format($totalSessions) }} sessions ·
-                {{ number_format($totalAffiliates) }} affiliates.
-            </p>
-        </div>
-    </div>
-</section>
-
-<section class="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)]">
-    <div class="rounded-3xl border border-slate-800 bg-slate-900/60 p-4">
-        <div class="flex items-center justify-between gap-3">
-            <p class="text-[11px] font-semibold text-slate-200">Recent payouts</p>
-        </div>
-
-        <div class="mt-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 text-[10px]">
-            @forelse($recentPayouts as $payout)
-                <div class="flex items-center justify-between py-1 border-b border-slate-800 last:border-0">
-                    <div>
-                        <p class="text-slate-300">
-                            €{{ number_format($payout->amount, 2) }}
-                            <span class="text-slate-500">
-                                · {{ $payout->affiliate->public_code ?? 'N/A' }}
-                            </span>
-                        </p>
-                        <p class="text-[10px] text-slate-500">
-                            {{ $payout->created_at }} · {{ ucfirst($payout->status) }}
-                        </p>
+    @if($needsAffiliateSetup)
+        <section class="stellar-hero">
+            <div class="stellar-hero-grid">
+                <div>
+                    <p class="stellar-eyebrow">Welcome to Stellar Affiliate</p>
+                    <h1 class="stellar-hero-title">Turn your first referral into a <span class="accent-text">trackable campaign.</span></h1>
+                    <p class="stellar-hero-copy">Your account is ready. Finish the guided setup and we will generate your affiliate profile, campaign and copy-ready tracking link.</p>
+                    <div class="stellar-actions">
+                        <a href="{{ route('affiliate.onboarding') }}" class="stellar-btn stellar-btn-primary">Start guided setup</a>
                     </div>
                 </div>
-            @empty
-                <p class="text-slate-500">No payouts yet.</p>
-            @endforelse
-        </div>
-    </div>
-
-    <div class="rounded-3xl border border-slate-800 bg-slate-900/60 p-4">
-        <div class="flex items-center justify-between gap-3">
-            <p class="text-[11px] font-semibold text-slate-200">Example affiliate link</p>
-        </div>
-
-        <p class="mt-1 text-[10px] text-slate-400">
-            When logged in as a specific affiliate, you can show their personalized link here.
-        </p>
-
-        <div class="mt-3 flex flex-col gap-2 rounded-2xl bg-slate-950/80 border border-slate-800 px-3 py-3 text-[10px]">
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div class="flex-1 truncate text-slate-100">
-                    @if($currentAffiliate)
-                        https://stellarafi.com/r/{{ $currentAffiliate->public_code }}
-                    @else
-                        https://stellarafi.com/r/AFFCODE
-                    @endif
+                <div class="stellar-hero-panel">
+                    <span class="stellar-hero-panel-label">Setup</span>
+                    <div class="stellar-hero-panel-value">1 of 4 steps complete</div>
+                    <div class="stellar-progress" style="margin-top: 12px;"><span style="width: 25%"></span></div>
+                    <p class="stellar-field-help" style="margin-top: 10px;">Complete setup to start tracking referrals.</p>
                 </div>
             </div>
-            <p class="text-[10px] text-slate-500">
-                Cookie window: <span class="font-semibold text-slate-100">180 days</span> on every click.
-            </p>
-        </div>
-    </div>
-</section>
+        </section>
+    @else
+        <section class="stellar-page-header">
+            <div>
+                <p class="stellar-eyebrow">{{ $dashboardIsAdmin ? 'Program overview' : 'Affiliate dashboard' }}</p>
+                <h1 class="stellar-page-title">{{ $dashboardIsAdmin ? 'Affiliate performance at a glance.' : 'Everything that matters, in one place.' }}</h1>
+                <p class="stellar-page-copy">
+                    {{ $dashboardIsAdmin ? 'Clicks, conversions, commissions and payouts across all affiliates.' : 'Track clicks, conversions, commissions and payouts.' }}
+                </p>
+            </div>
+            @if(!$dashboardIsAdmin && $currentAffiliate)
+                <span class="stellar-kicker">{{ $currentAffiliate->public_code }}</span>
+            @endif
+        </section>
 
-<section class="rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-            <p class="text-[11px] font-semibold text-slate-200">Recent sales (all affiliates)</p>
-            <p class="mt-1 text-[10px] text-slate-400">Initial and recurring commissions.</p>
-        </div>
-    </div>
+        @if(!$setupReady)
+            <section class="stellar-hero" style="min-height: 180px;">
+                <div class="stellar-hero-grid">
+                    <div>
+                        <p class="stellar-eyebrow">One step left</p>
+                        <h2 class="stellar-hero-title" style="font-size: clamp(28px, 3.5vw, 40px);">Create your first campaign and <span class="accent-text">get your link.</span></h2>
+                        <p class="stellar-hero-copy">Your affiliate profile is active. A campaign gives your traffic a clear source and produces the URL you can share.</p>
+                        <div class="stellar-actions">
+                            <a href="{{ route('affiliate.onboarding') }}" class="stellar-btn stellar-btn-primary">Finish setup</a>
+                        </div>
+                    </div>
+                    <div class="stellar-hero-panel">
+                        <span class="stellar-hero-panel-label">Progress</span>
+                        <div class="stellar-hero-panel-value">Profile ready</div>
+                        <div class="stellar-progress" style="margin-top: 12px;"><span style="width: 50%"></span></div>
+                    </div>
+                </div>
+            </section>
+        @elseif(!$dashboardIsAdmin && $quickTrackingUrl && $currentAffiliate?->status === 'active')
+            <section class="stellar-hero" style="min-height: 188px;">
+                <div class="stellar-hero-grid">
+                    <div>
+                        <p class="stellar-eyebrow">Ready to share</p>
+                        <h2 class="stellar-hero-title" style="font-size: clamp(28px, 3.5vw, 40px);">Your tracking link is <span class="accent-text">one tap away.</span></h2>
+                        <p class="stellar-hero-copy">Primary campaign: <strong>{{ $primaryCampaign?->name }}</strong>. Copy the complete link and use it wherever you promote Stellar.</p>
+                        <div class="stellar-actions">
+                            <button type="button" class="stellar-btn stellar-btn-primary" data-copy="{{ $quickTrackingUrl }}">Copy tracking link</button>
+                            <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-secondary">Manage campaigns</a>
+                        </div>
+                    </div>
+                    <div class="stellar-hero-panel">
+                        <span class="stellar-hero-panel-label">Active campaigns</span>
+                        <div class="stellar-hero-panel-value">{{ number_format($campaignCount) }}</div>
+                        <div class="stellar-link-box" style="margin-top: 12px;">
+                            <div class="stellar-link-value" title="{{ $quickTrackingUrl }}">{{ $quickTrackingUrl }}</div>
+                            <button type="button" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-copy="{{ $quickTrackingUrl }}">Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        @elseif(!$dashboardIsAdmin && $quickTrackingUrl)
+            <section class="stellar-hero" style="min-height: 180px;">
+                <div class="stellar-hero-grid">
+                    <div>
+                        <p class="stellar-eyebrow">Campaign ready</p>
+                        <h2 class="stellar-hero-title" style="font-size: clamp(28px, 3.5vw, 40px);">Your setup is <span class="accent-text">complete.</span></h2>
+                        <p class="stellar-hero-copy">Your tracking link activates when your affiliate account is active.</p>
+                        <div class="stellar-actions">
+                            <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}" class="stellar-btn stellar-btn-primary">Contact support</a>
+                            <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-secondary">View campaign</a>
+                        </div>
+                    </div>
+                    <div class="stellar-hero-panel">
+                        <span class="stellar-hero-panel-label">Account status</span>
+                        <div class="stellar-hero-panel-value">{{ $currentAffiliate?->status === 'pending' ? 'Pending approval' : 'Inactive' }}</div>
+                    </div>
+                </div>
+            </section>
+        @endif
 
-    <div class="mt-3 overflow-x-auto text-[10px]">
-        <table class="min-w-full border-separate border-spacing-y-1">
-            <thead class="text-slate-400">
-            <tr>
-                <th class="px-3 py-1 text-left font-medium">Date</th>
-                <th class="px-3 py-1 text-left font-medium">Affiliate</th>
-                <th class="px-3 py-1 text-left font-medium">Product</th>
-                <th class="px-3 py-1 text-right font-medium">Amount</th>
-                <th class="px-3 py-1 text-right font-medium">Commission</th>
-                <th class="px-3 py-1 text-left font-medium">Status</th>
-            </tr>
-            </thead>
-            <tbody>
-            @forelse($latestSales as $sale)
-                <tr class="rounded-2xl bg-slate-950/70 text-slate-200">
-                    <td class="px-3 py-2 rounded-l-2xl">{{ $sale->created_at }}</td>
-                    <td class="px-3 py-2">
-                        {{ $sale->affiliate->public_code ?? 'N/A' }}
-                    </td>
-                    <td class="px-3 py-2">
-                        {{ $sale->product ?? 'VPN' }}
-                    </td>
-                    <td class="px-3 py-2 text-right">
-                        €{{ number_format($sale->order_amount ?? $sale->amount, 2) }}
-                    </td>
-                    <td class="px-3 py-2 text-right text-emerald-400">
-                        €{{ number_format($sale->amount, 2) }}
-                    </td>
-                    <td class="px-3 py-2 rounded-r-2xl text-emerald-400">
-                        {{ ucfirst($sale->status ?? 'approved') }}
-                    </td>
-                </tr>
-            @empty
-                <tr>
-                    <td colspan="6" class="px-3 py-4 text-center text-slate-500">
-                        No sales yet.
-                    </td>
-                </tr>
-            @endforelse
-            </tbody>
-        </table>
-    </div>
-</section>
+        <section class="stellar-grid-4 stellar-metrics">
+            <article class="stellar-card stellar-metric">
+                <span class="stellar-metric-icon">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M5 7.5h14v10H5v-10Zm3 3h8m-8 3h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                </span>
+                <div class="stellar-metric-label">Commission total</div>
+                <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($totalEarnings) }}</div>
+                <div class="stellar-metric-detail">Pending, approved and paid commissions.</div>
+            </article>
+
+            <article class="stellar-card stellar-metric">
+                <span class="stellar-metric-icon">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="m9 8 3-3 3 3m-3-3v9m-5 5h10a2 2 0 0 0 2-2v-5M5 12v5a2 2 0 0 0 2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <div class="stellar-metric-label">Tracked clicks</div>
+                <div class="stellar-metric-value">{{ number_format($totalClicks) }}</div>
+                <div class="stellar-metric-detail">{{ number_format($clicksLast30) }} in the last 30 days.</div>
+            </article>
+
+            <article class="stellar-card stellar-metric">
+                <span class="stellar-metric-icon">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M6 12.5 10 16l8-9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 12a8 8 0 1 1-4.1-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </span>
+                <div class="stellar-metric-label">Conversions</div>
+                <div class="stellar-metric-value">{{ number_format($totalConversions) }}</div>
+                <div class="stellar-metric-detail">{{ number_format($salesLast30) }} in the last 30 days.</div>
+            </article>
+
+            <article class="stellar-card stellar-metric">
+                <span class="stellar-metric-icon">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M5 18 10 13l3 3 6-8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                @if($dashboardIsAdmin)
+                    <div class="stellar-metric-label">Affiliates</div>
+                    <div class="stellar-metric-value">{{ number_format($totalAffiliates) }}</div>
+                    <div class="stellar-metric-detail">{{ number_format($campaignCount) }} campaign{{ $campaignCount === 1 ? '' : 's' }} in the program.</div>
+                @else
+                    <div class="stellar-metric-label">Conversion rate</div>
+                    <div class="stellar-metric-value">{{ number_format($conversionRate, 2) }}%</div>
+                    <div class="stellar-metric-detail">Conversions divided by tracked clicks.</div>
+                @endif
+            </article>
+        </section>
+
+        <section class="stellar-grid-2 stellar-section">
+            <article class="stellar-card stellar-card-pad">
+                <div class="stellar-section-head">
+                    <div>
+                        <h2 class="stellar-section-title">Commission status</h2>
+                        <p class="stellar-section-copy">See what is pending, approved and already paid.</p>
+                    </div>
+                </div>
+                <div class="stellar-stat-list">
+                    <div class="stellar-stat-row"><span>Pending review</span><strong>€{{ \App\Support\CommissionMath::display($pendingCommission) }}</strong></div>
+                    <div class="stellar-stat-row"><span>Approved</span><strong>€{{ \App\Support\CommissionMath::display($approvedCommission) }}</strong></div>
+                    <div class="stellar-stat-row"><span>Paid out</span><strong>€{{ \App\Support\CommissionMath::display($paidCommission) }}</strong></div>
+                    <div class="stellar-stat-row"><span>Tracked sessions</span><strong>{{ number_format($totalSessions) }}</strong></div>
+                    <div class="stellar-stat-row"><span>{{ $dashboardIsAdmin ? 'Campaigns' : 'Your campaigns' }}</span><strong>{{ number_format($campaignCount) }}</strong></div>
+                </div>
+                <div class="stellar-actions">
+                    <a href="{{ route('affiliate.payouts') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">View payouts</a>
+                </div>
+            </article>
+
+            <article class="stellar-card stellar-card-pad">
+                <div class="stellar-section-head">
+                    <div>
+                        <h2 class="stellar-section-title">Last 30 days</h2>
+                        <p class="stellar-section-copy">Your performance over the last 30 days.</p>
+                    </div>
+                </div>
+                <div class="stellar-stat-list">
+                    <div class="stellar-stat-row"><span>Clicks</span><strong>{{ number_format($clicksLast30) }}</strong></div>
+                    <div class="stellar-stat-row"><span>Conversions</span><strong>{{ number_format($salesLast30) }}</strong></div>
+                    <div class="stellar-stat-row"><span>Conversion rate</span><strong>{{ number_format($conversionRate, 2) }}%</strong></div>
+                    <div class="stellar-stat-row"><span>Referral window</span><strong>180 days</strong></div>
+                </div>
+                <div class="stellar-actions">
+                    <a href="{{ route('affiliate.analytics') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">Open analytics</a>
+                </div>
+            </article>
+        </section>
+
+        @if(!$dashboardIsAdmin)
+            @php
+                $esimFeed = (string) config('affiliate.resources.esim_feed_url');
+            @endphp
+            <section class="stellar-card stellar-card-pad stellar-section stellar-resource-card">
+                <div class="stellar-resource-main">
+                    <div>
+                        <p class="stellar-eyebrow">Affiliate resource</p>
+                        <h2 class="stellar-section-title">Stellar eSIM product feed</h2>
+                        <p class="stellar-section-copy">Live eSIM product feed for your site or storefront.</p>
+                    </div>
+                    <div class="stellar-actions">
+                        <a class="stellar-btn stellar-btn-primary" href="{{ $esimFeed }}" target="_blank" rel="noopener noreferrer">Open feed</a>
+                        <button type="button" class="stellar-btn stellar-btn-secondary" data-copy="{{ $esimFeed }}">Copy URL</button>
+                    </div>
+                </div>
+                <div class="stellar-resource-url">{{ $esimFeed }}</div>
+            </section>
+        @endif
+
+        <section class="stellar-card stellar-card-pad stellar-section">
+            <div class="stellar-section-head">
+                <div>
+                    <h2 class="stellar-section-title">Recent conversions</h2>
+                    <p class="stellar-section-copy">Your latest conversions and commission status.</p>
+                </div>
+                <a href="{{ route('affiliate.sales') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">View all</a>
+            </div>
+
+            @if($latestSales->isEmpty())
+                <div class="stellar-empty">
+                    <div>
+                        <span class="stellar-empty-icon">↗</span>
+                        <h3>No conversions yet</h3>
+                        <p>Share a campaign link. Your first conversion will appear here automatically.</p>
+                        <div class="stellar-actions" style="justify-content: center;">
+                            <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Open campaigns</a>
+                        </div>
+                    </div>
+                </div>
+            @else
+                <div class="stellar-table-wrap">
+                    <table class="stellar-table">
+                        <thead>
+                        <tr>
+                            <th>Date</th>
+                            @if($dashboardIsAdmin)<th>Affiliate</th>@endif
+                            <th>Order ID</th>
+                            <th>Product</th>
+                            <th>Type</th>
+                            <th>Commission</th>
+                            <th>Status</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach($latestSales as $sale)
+                            @php
+                                $orderId = $sale->getRawOriginal('order_id') ?: '-';
+                                $status = $sale->status ?: 'unknown';
+                                $statusClass = match($status) {
+                                    'approved', 'paid_out' => 'is-success',
+                                    'pending' => 'is-warning',
+                                    'rejected' => 'is-danger',
+                                    default => '',
+                                };
+                                $statusLabel = match($status) { 'paid_out' => 'Paid out', 'pending' => 'Pending review', default => ucfirst($status) };
+                            @endphp
+                            <tr>
+                                <td>{{ $sale->created_at?->format('M j, Y · H:i') }}</td>
+                                @if($dashboardIsAdmin)<td class="strong">{{ $sale->affiliate?->public_code ?: '—' }}</td>@endif
+                                <td>
+                                    @if($orderId !== '-')
+                                        <a href="{{ route('affiliate.orders.show', ['commission' => $sale->id]) }}" class="stellar-order-link" title="View order {{ $orderId }}">
+                                            <span class="stellar-code">{{ $orderId }}</span>
+                                            <span>View</span>
+                                        </a>
+                                    @else
+                                        <span class="stellar-code">—</span>
+                                    @endif
+                                </td>
+                                <td>{{ $sale->product ? config('affiliate.products.'.$sale->product.'.label', ucfirst($sale->product)) : 'Unassigned' }}</td>
+                                <td>{{ $sale->type === 'initial' ? 'First payment' : ($sale->type === 'recurring' ? 'Recurring' : '—') }}</td>
+                                <td class="strong">{{ $sale->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($sale->amount) }}</td>
+                                <td><span class="stellar-badge {{ $statusClass }}">{{ $statusLabel }}</span></td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </section>
+    @endif
 @endsection

@@ -44,6 +44,11 @@ class Affiliate extends Model
         return $this->hasMany(AffiliateCommission::class);
     }
 
+    public function commissionRules()
+    {
+        return $this->hasMany(AffiliateCommissionRule::class);
+    }
+
     public function payouts()
     {
         return $this->hasMany(Payout::class);

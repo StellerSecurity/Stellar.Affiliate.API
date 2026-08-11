@@ -22,7 +22,7 @@ class Payout extends Model
 
     protected $casts = [
         'affiliate_id'            => 'integer',
-        'amount'                  => 'decimal:2',
+        'amount'                  => 'decimal:6',
         'method_details_snapshot' => 'array',
         'paid_at'                 => 'datetime',
     ];

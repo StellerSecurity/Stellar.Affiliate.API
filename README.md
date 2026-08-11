@@ -57,3 +57,35 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## Affiliate order details
+
+The affiliate portal can fetch read-only order details from Stellar Commerce for conversions that already belong to the signed-in affiliate.
+
+Install dependencies normally:
+
+```bash
+composer install
+```
+
+Configure the Commerce Core connection in `.env`:
+
+```dotenv
+STELLAR_COMMERCE_CORE_BASE_URL=http://127.0.0.1:8001
+STELLAR_COMMERCE_CORE_API_PREFIX=/api/v1
+STELLAR_COMMERCE_CORE_BASIC_AUTH_ENABLED=true
+STELLAR_COMMERCE_CORE_BASIC_AUTH_USER=stellar
+STELLAR_COMMERCE_CORE_BASIC_AUTH_PASS=CHANGE_THIS
+```
+
+The portal intentionally exposes only order ID, timestamps, status, totals and product lines to affiliates. Buyer references, user IDs, shipping information, order events and arbitrary metadata are not passed to the affiliate view.
+
+For local development, run Commerce on port `8001` if the affiliate portal is already using port `8000`:
+
+```bash
+# Commerce API
+php artisan serve --port=8001
+
+# Affiliate portal
+php artisan serve --port=8000
+```

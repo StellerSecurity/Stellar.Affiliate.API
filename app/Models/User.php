@@ -2,42 +2,26 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\database\factories\UserFactory> */
     use HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
     protected $fillable = [
         'name',
         'email',
         'password',
+        'affiliate_admin_role',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [
@@ -48,6 +32,45 @@ class User extends Authenticatable
 
     public function affiliate()
     {
-        return $this->hasOne(\App\Models\Affiliate::class, 'external_user_id', 'id');
+        return $this->hasOne(Affiliate::class, 'external_user_id', 'id');
+    }
+
+    public function affiliateAdminRole(): ?string
+    {
+        $email = strtolower((string) $this->email);
+        $environmentOwners = (array) config('affiliate.admin_emails', []);
+
+        if (in_array($email, $environmentOwners, true)) {
+            return 'super_admin';
+        }
+
+        $role = trim((string) $this->affiliate_admin_role);
+
+        return in_array($role, ['super_admin', 'admin', 'finance', 'analyst'], true) ? $role : null;
+    }
+
+    public function hasAffiliateAdminAccess(): bool
+    {
+        return $this->affiliateAdminRole() !== null;
+    }
+
+    public function canManageAffiliateProgram(): bool
+    {
+        return in_array($this->affiliateAdminRole(), ['super_admin', 'admin'], true);
+    }
+
+    public function canManageAffiliateCommissions(): bool
+    {
+        return in_array($this->affiliateAdminRole(), ['super_admin', 'admin', 'finance'], true);
+    }
+
+    public function canManageAffiliateRoles(): bool
+    {
+        return $this->affiliateAdminRole() === 'super_admin';
+    }
+
+    public function isEnvironmentAffiliateOwner(): bool
+    {
+        return in_array(strtolower((string) $this->email), (array) config('affiliate.admin_emails', []), true);
     }
 }

@@ -11,10 +11,10 @@
 }
 
 @theme {
-    --color-stellar-blue: #2563ff;
-    --color-stellar-blueDark: #1b46d8;
-    --color-stellar-navy: #020826;
+    --color-stellar-blue: #2f66f6;
+    --color-stellar-blueDark: #2458dc;
+    --color-stellar-navy: #0b0b0f;
     --radius-3xl: 1.75rem;
     --radius-4xl: 2.25rem;
-    --shadow-glass: 0 24px 70px rgba(15, 23, 42, 0.45);
+    --shadow-glass: 0 12px 34px rgba(15, 23, 42, 0.07);
 }
