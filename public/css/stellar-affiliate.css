@@ -2928,3 +2928,171 @@ summary:focus-visible {
         width: 100%;
     }
 }
+
+/* Affiliate reporting and export refinements. */
+.stellar-filterbar-wide {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    align-items: end;
+}
+
+.stellar-filterbar-wide .stellar-field {
+    min-width: 0;
+}
+
+.stellar-filterbar-wide .stellar-filter-search {
+    grid-column: span 2;
+}
+
+.stellar-filter-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.stellar-period-bar,
+.stellar-quick-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.stellar-period-bar > div,
+.stellar-quick-actions > div {
+    min-width: 0;
+}
+
+.stellar-period-bar strong {
+    display: block;
+    margin-top: 2px;
+    color: #0a0a0d;
+    font-size: 19px;
+    font-weight: 720;
+    letter-spacing: -0.02em;
+}
+
+.stellar-period-options {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 5px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+    background: #f5f5f7;
+}
+
+.stellar-period-button {
+    min-height: 36px;
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #6e6e73;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.stellar-period-button:hover {
+    color: #0a0a0d;
+}
+
+.stellar-period-button.is-active {
+    background: #ffffff;
+    color: #0a0a0d;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.stellar-export-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.stellar-export-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 16px;
+    background: #f7f7f8;
+}
+
+.stellar-export-card > div {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.stellar-export-card strong {
+    color: #0a0a0d;
+    font-size: 16px;
+    font-weight: 720;
+}
+
+.stellar-export-card span {
+    color: #6e6e73;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.stellar-campaign-performance {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+    .stellar-campaign-performance {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .stellar-filterbar-wide,
+    .stellar-export-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stellar-filterbar-wide .stellar-filter-search {
+        grid-column: auto;
+    }
+
+    .stellar-period-bar,
+    .stellar-quick-actions,
+    .stellar-export-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .stellar-period-options {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .stellar-period-button,
+    .stellar-export-card .stellar-btn {
+        width: 100%;
+    }
+
+    .stellar-filter-actions .stellar-btn {
+        flex: 1 1 140px;
+    }
+}
+
+@media (max-width: 640px) {
+    .stellar-campaign-performance {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 480px) {
+    .stellar-campaign-performance {
+        grid-template-columns: 1fr;
+    }
+}

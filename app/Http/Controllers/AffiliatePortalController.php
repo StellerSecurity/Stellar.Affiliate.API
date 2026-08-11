@@ -12,6 +12,7 @@ use App\Services\AffiliateOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -109,6 +110,135 @@ class AffiliatePortalController extends Controller
         $query = http_build_query($params);
 
         return $query === '' ? $url : $url . '?' . $query;
+    }
+
+
+    private function pageSize(Request $request): int
+    {
+        $size = (int) $request->query('per_page', 25);
+
+        return in_array($size, [25, 50, 100], true) ? $size : 25;
+    }
+
+    private function commissionFilters(Request $request): array
+    {
+        $status = trim((string) $request->query('status'));
+        $type = trim((string) $request->query('type'));
+        $product = trim((string) $request->query('product'));
+        $search = trim((string) $request->query('q'));
+        $from = trim((string) $request->query('from'));
+        $to = trim((string) $request->query('to'));
+
+        return [
+            'status' => in_array($status, ['pending', 'approved', 'rejected', 'paid_out'], true) ? $status : '',
+            'type' => in_array($type, ['initial', 'recurring'], true) ? $type : '',
+            'product' => $product !== '' ? app(\App\Services\AffiliateCommissionPolicy::class)->normalizeProduct($product) : '',
+            'q' => $search,
+            'from' => $from,
+            'to' => $to,
+        ];
+    }
+
+    private function applyCommissionFilters($query, array $filters)
+    {
+        if ($filters['status'] !== '') {
+            $query->where('status', $filters['status']);
+        }
+
+        if ($filters['type'] !== '') {
+            $query->where('type', $filters['type']);
+        }
+
+        if ($filters['product'] !== '') {
+            $query->where('product', $filters['product']);
+        }
+
+        if ($filters['q'] !== '') {
+            $search = $filters['q'];
+            $query->where(function ($q) use ($search) {
+                $q->where('order_id', 'like', "%{$search}%")
+                    ->orWhere('external_payment_id', 'like', "%{$search}%")
+                    ->orWhereHas('campaign', function ($campaignQuery) use ($search) {
+                        $campaignQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('source', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        if ($filters['from'] !== '') {
+            try {
+                $query->where('created_at', '>=', Carbon::parse($filters['from']));
+            } catch (\Throwable) {
+                // Invalid manual query-string values are ignored; browser controls send valid values.
+            }
+        }
+
+        if ($filters['to'] !== '') {
+            try {
+                $query->where('created_at', '<=', Carbon::parse($filters['to']));
+            } catch (\Throwable) {
+                // Invalid manual query-string values are ignored; browser controls send valid values.
+            }
+        }
+
+        return $query;
+    }
+
+    private function csvCell(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        $text = (string) $value;
+
+        $formulaCandidate = ltrim($text);
+        if ($formulaCandidate !== '' && preg_match('/^[=+\-@]/', $formulaCandidate) === 1) {
+            return "'".$text;
+        }
+
+        return $text;
+    }
+
+    private function streamCsv(string $filename, array $headers, callable $writeRows)
+    {
+        return response()->streamDownload(function () use ($headers, $writeRows) {
+            echo "\xEF\xBB\xBF";
+            $handle = fopen('php://output', 'wb');
+            fputcsv($handle, $headers, ',', '"', '');
+            $writeRows($handle);
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    private function analyticsPeriod(Request $request): array
+    {
+        $range = (string) $request->query('range', '30');
+        if (! in_array($range, ['7', '30', '90', 'all'], true)) {
+            $range = '30';
+        }
+
+        $from = match ($range) {
+            '7' => now()->subDays(6)->startOfDay(),
+            '30' => now()->subDays(29)->startOfDay(),
+            '90' => now()->subDays(89)->startOfDay(),
+            default => null,
+        };
+
+        return [
+            'range' => $range,
+            'from' => $from,
+            'label' => match ($range) {
+                '7' => 'Last 7 days',
+                '30' => 'Last 30 days',
+                '90' => 'Last 90 days',
+                default => 'All time',
+            },
+        ];
     }
 
     public function onboarding(Request $request)
@@ -391,54 +521,51 @@ class AffiliatePortalController extends Controller
             return redirect()->route('affiliate.onboarding');
         }
 
-        $search = $request->query('q');
-
+        $search = trim((string) $request->query('q'));
+        $productFilter = trim((string) $request->query('product'));
+        $sourceFilter = trim((string) $request->query('source'));
+        $pageSize = $this->pageSize($request);
         $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
 
         $query = AffiliateCampaign::query()
             ->with('affiliate')
             ->withCount('clicks')
+            ->withCount('sessions')
             ->withCount(['commissions as conversions_count' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)])
             ->withSum(['commissions as commission_total' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)], 'amount')
+            ->withSum(['commissions as order_value_total' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)], 'order_amount')
+            ->where('affiliate_id', (int) $currentAffiliate->id)
             ->orderByDesc('created_at');
 
-        if ($currentAffiliate) {
-            $query->where('affiliate_id', (int) $currentAffiliate->id);
-        } elseif (! $admin) {
-            // No affiliate and not admin => empty
-            $query->whereRaw('1 = 0');
-        }
-
-        if ($search) {
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('source', 'like', "%{$search}%")
-                    ->orWhereHas('affiliate', function ($qa) use ($search) {
-                        $qa->where('public_code', 'like', "%{$search}%");
-                    });
+                    ->orWhere('sub_id1', 'like', "%{$search}%")
+                    ->orWhere('sub_id2', 'like', "%{$search}%");
             });
         }
 
-        $campaigns = $query->paginate(25)->withQueryString();
-
-        // Dropdown affiliates
-        if ($admin) {
-            $affiliates = Affiliate::orderBy('public_code')->get(['id', 'public_code']);
-        } elseif ($currentAffiliate) {
-            $affiliates = Affiliate::where('id', (int) $currentAffiliate->id)->get(['id', 'public_code']);
+        if (in_array($productFilter, ['esim', 'vpn', 'antivirus'], true)) {
+            $query->where('product', $productFilter);
         } else {
-            $affiliates = collect();
+            $productFilter = '';
         }
+
+        if (in_array($sourceFilter, ['youtube', 'instagram', 'tiktok', 'blog', 'newsletter', 'other'], true)) {
+            $query->where('source', $sourceFilter);
+        } else {
+            $sourceFilter = '';
+        }
+
+        $campaigns = $query->paginate($pageSize)->withQueryString();
+        $affiliates = Affiliate::where('id', (int) $currentAffiliate->id)->get(['id', 'public_code']);
 
         $policy = app(\App\Services\AffiliateCommissionPolicy::class);
         $campaignCommissionRates = [];
         foreach (['esim', 'vpn', 'antivirus'] as $product) {
-            $initial = $currentAffiliate
-                ? $policy->effectiveRate((int) $currentAffiliate->id, $product, 'initial')
-                : $policy->globalRate($product, 'initial');
-            $recurring = $currentAffiliate
-                ? $policy->effectiveRate((int) $currentAffiliate->id, $product, 'recurring')
-                : $policy->globalRate($product, 'recurring');
+            $initial = $policy->effectiveRate((int) $currentAffiliate->id, $product, 'initial');
+            $recurring = $policy->effectiveRate((int) $currentAffiliate->id, $product, 'recurring');
 
             $campaignCommissionRates[$product] = [
                 'initial' => (float) $initial['rate'],
@@ -447,11 +574,14 @@ class AffiliatePortalController extends Controller
         }
 
         return view('affiliate-campaigns', [
-            'campaigns'  => $campaigns,
+            'campaigns' => $campaigns,
             'affiliates' => $affiliates,
-            'search'     => $search,
+            'search' => $search,
+            'currentProductFilter' => $productFilter,
+            'currentSourceFilter' => $sourceFilter,
+            'currentPerPage' => $pageSize,
             'currentAffiliate' => $currentAffiliate,
-            'isAdmin' => $admin,
+            'isAdmin' => false,
             'campaignCommissionRates' => $campaignCommissionRates,
             'productDefaultDestinations' => [
                 'esim' => $this->productDefaultRedirect('esim'),
@@ -459,6 +589,74 @@ class AffiliatePortalController extends Controller
                 'antivirus' => $this->productDefaultRedirect('antivirus'),
             ],
         ]);
+    }
+
+    public function campaignsExport(Request $request)
+    {
+        $affiliate = $this->resolvedAffiliate($request);
+        if (! $affiliate || $this->isAdmin($request)) {
+            abort(404);
+        }
+
+        $search = trim((string) $request->query('q'));
+        $product = trim((string) $request->query('product'));
+        $source = trim((string) $request->query('source'));
+        $validStatuses = ['pending', 'approved', 'paid_out'];
+
+        $query = AffiliateCampaign::query()
+            ->where('affiliate_id', (int) $affiliate->id)
+            ->withCount('clicks')
+            ->withCount('sessions')
+            ->withCount(['commissions as conversions_count' => fn ($q) => $q->whereIn('status', $validStatuses)])
+            ->withSum(['commissions as commission_total' => fn ($q) => $q->whereIn('status', $validStatuses)], 'amount')
+            ->withSum(['commissions as order_value_total' => fn ($q) => $q->whereIn('status', $validStatuses)], 'order_amount');
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('source', 'like', "%{$search}%")
+                    ->orWhere('sub_id1', 'like', "%{$search}%")
+                    ->orWhere('sub_id2', 'like', "%{$search}%");
+            });
+        }
+        if (in_array($product, ['esim', 'vpn', 'antivirus'], true)) {
+            $query->where('product', $product);
+        }
+        if (in_array($source, ['youtube', 'instagram', 'tiktok', 'blog', 'newsletter', 'other'], true)) {
+            $query->where('source', $source);
+        }
+
+        $filename = 'stellar-affiliate-campaigns-'.strtolower($affiliate->public_code).'-'.now()->format('Y-m-d').'.csv';
+
+        return $this->streamCsv($filename, [
+            'Campaign ID', 'Campaign', 'Product', 'Source', 'Sub ID 1', 'Sub ID 2', 'Destination URL',
+            'Clicks', 'Sessions', 'Conversions', 'Conversion Rate %', 'Order Value', 'Commission', 'Tracking URL', 'Created At',
+        ], function ($handle) use ($query, $affiliate) {
+            $query->orderBy('id')->chunkById(250, function ($rows) use ($handle, $affiliate) {
+                foreach ($rows as $campaign) {
+                    $clicks = (int) ($campaign->clicks_count ?? 0);
+                    $conversions = (int) ($campaign->conversions_count ?? 0);
+                    $rate = $clicks > 0 ? ($conversions / $clicks) * 100 : 0;
+                    fputcsv($handle, array_map([$this, 'csvCell'], [
+                        $campaign->id,
+                        $campaign->name,
+                        $campaign->product,
+                        $campaign->source,
+                        $campaign->sub_id1,
+                        $campaign->sub_id2,
+                        $this->campaignDestination($campaign),
+                        $clicks,
+                        (int) ($campaign->sessions_count ?? 0),
+                        $conversions,
+                        number_format($rate, 4, '.', ''),
+                        number_format((float) ($campaign->order_value_total ?? 0), 2, '.', ''),
+                        number_format((float) ($campaign->commission_total ?? 0), 6, '.', ''),
+                        $this->campaignTrackingUrl($affiliate, $campaign),
+                        $campaign->created_at?->format('Y-m-d H:i:s'),
+                    ]), ',', '"', '');
+                }
+            });
+        });
     }
 
     public function campaignsStore(Request $request)
@@ -597,7 +795,6 @@ class AffiliatePortalController extends Controller
     {
         $currentAffiliate = $this->resolvedAffiliate($request);
         $admin = $this->isAdmin($request);
-        $from = now()->subDays(30);
 
         if ($admin) {
             return redirect()->route('affiliate.admin.dashboard');
@@ -607,110 +804,178 @@ class AffiliatePortalController extends Controller
             return redirect()->route('affiliate.onboarding');
         }
 
-        $clicksQ = AffiliateClick::query()->where('created_at', '>=', $from);
-        $sessionsQ = AffiliateSession::query()->where('created_at', '>=', $from);
-        $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
-        $salesQ = AffiliateCommission::query()
-            ->whereIn('status', $validCommissionStatuses)
-            ->where('created_at', '>=', $from);
+        $period = $this->analyticsPeriod($request);
+        $from = $period['from'];
+        $aid = (int) $currentAffiliate->id;
+        $validStatuses = ['pending', 'approved', 'paid_out'];
 
-        if ($currentAffiliate) {
-            $aid = (int) $currentAffiliate->id;
-            $clicksQ->where('affiliate_id', $aid);
-            $sessionsQ->where('affiliate_id', $aid);
-            $salesQ->where('affiliate_id', $aid);
+        $clicksQ = AffiliateClick::query()->where('affiliate_id', $aid);
+        $sessionsQ = AffiliateSession::query()->where('affiliate_id', $aid);
+        $salesQ = AffiliateCommission::query()->where('affiliate_id', $aid)->whereIn('status', $validStatuses);
+
+        if ($from) {
+            $clicksQ->where('created_at', '>=', $from);
+            $sessionsQ->where('created_at', '>=', $from);
+            $salesQ->where('created_at', '>=', $from);
         }
 
-        $clicksLast30   = $clicksQ->count();
-        $sessionsLast30 = $sessionsQ->count();
-        $salesLast30    = $salesQ->count();
-        $revenueLast30  = (clone $salesQ)->sum('amount');
+        $clicksPeriod = $clicksQ->count();
+        $sessionsPeriod = $sessionsQ->count();
+        $salesPeriod = $salesQ->count();
+        $commissionPeriod = (clone $salesQ)->sum('amount');
+        $orderValuePeriod = (clone $salesQ)->sum('order_amount');
+        $conversionRate = $clicksPeriod > 0 ? round(($salesPeriod / $clicksPeriod) * 100, 2) : 0;
+        $epc = $clicksPeriod > 0 ? $commissionPeriod / $clicksPeriod : 0;
+        $averageOrderValue = $salesPeriod > 0 ? $orderValuePeriod / $salesPeriod : 0;
 
-        $conversionRate = $clicksLast30 > 0 ? round(($salesLast30 / max($clicksLast30, 1)) * 100, 2) : 0;
-        $epc            = $clicksLast30 > 0 ? round($revenueLast30 / max($clicksLast30, 1), 4) : 0;
-
-        $topAffiliatesQ = AffiliateCommission::with('affiliate')
-            ->select(
-                'affiliate_id',
-                DB::raw('COUNT(*) as sales_count'),
-                DB::raw('SUM(amount) as total_commission')
-            )
-            ->whereIn('status', $validCommissionStatuses)
-            ->where('created_at', '>=', $from);
-
-        if ($currentAffiliate) {
-            $topAffiliatesQ->where('affiliate_id', (int) $currentAffiliate->id);
+        $unattributedClicksQuery = AffiliateClick::query()
+            ->where('affiliate_id', $aid)
+            ->whereNull('campaign_id');
+        $unattributedSalesQuery = AffiliateCommission::query()
+            ->where('affiliate_id', $aid)
+            ->whereNull('campaign_id')
+            ->whereIn('status', $validStatuses);
+        if ($from) {
+            $unattributedClicksQuery->where('created_at', '>=', $from);
+            $unattributedSalesQuery->where('created_at', '>=', $from);
         }
+        $unattributedClicks = $unattributedClicksQuery->count();
+        $unattributedConversions = $unattributedSalesQuery->count();
+        $unattributedOrderValue = (clone $unattributedSalesQuery)->sum('order_amount');
+        $unattributedCommission = (clone $unattributedSalesQuery)->sum('amount');
 
-        $topAffiliates = $topAffiliatesQ
-            ->groupBy('affiliate_id')
-            ->orderByDesc('total_commission')
-            ->limit(10)
-            ->get();
+        $topCampaigns = AffiliateCampaign::query()
+            ->where('affiliate_id', $aid)
+            ->withCount(['clicks as period_clicks_count' => function ($q) use ($from) {
+                if ($from) {
+                    $q->where('created_at', '>=', $from);
+                }
+            }])
+            ->withCount(['commissions as period_conversions_count' => function ($q) use ($from, $validStatuses) {
+                $q->whereIn('status', $validStatuses);
+                if ($from) {
+                    $q->where('created_at', '>=', $from);
+                }
+            }])
+            ->withSum(['commissions as period_commission_total' => function ($q) use ($from, $validStatuses) {
+                $q->whereIn('status', $validStatuses);
+                if ($from) {
+                    $q->where('created_at', '>=', $from);
+                }
+            }], 'amount')
+            ->withSum(['commissions as period_order_value_total' => function ($q) use ($from, $validStatuses) {
+                $q->whereIn('status', $validStatuses);
+                if ($from) {
+                    $q->where('created_at', '>=', $from);
+                }
+            }], 'order_amount')
+            ->get()
+            ->sortByDesc(fn ($campaign) => (float) ($campaign->period_commission_total ?? 0))
+            ->take(10)
+            ->values();
 
-        $from7 = now()->subDays(7)->startOfDay();
+        // Keep charts readable while the headline metrics can cover 90 days or all time.
+        $chartFrom = $from && $from->greaterThan(now()->subDays(29)->startOfDay())
+            ? $from->copy()
+            : now()->subDays(29)->startOfDay();
 
-        $dailyClicksQ = AffiliateClick::select(
-            DB::raw('DATE(created_at) as day'),
-            DB::raw('COUNT(*) as clicks')
-        )->where('created_at', '>=', $from7);
-
-        $dailySalesQ = AffiliateCommission::select(
-            DB::raw('DATE(created_at) as day'),
-            DB::raw('COUNT(*) as sales')
-        )->whereIn('status', $validCommissionStatuses)
-            ->where('created_at', '>=', $from7);
-
-        if ($currentAffiliate) {
-            $aid = (int) $currentAffiliate->id;
-            $dailyClicksQ->where('affiliate_id', $aid);
-            $dailySalesQ->where('affiliate_id', $aid);
-        }
-
-        $dailyClicks = $dailyClicksQ
+        $dailyClicks = AffiliateClick::select(DB::raw('DATE(created_at) as day'), DB::raw('COUNT(*) as clicks'))
+            ->where('affiliate_id', $aid)
+            ->where('created_at', '>=', $chartFrom)
             ->groupBy(DB::raw('DATE(created_at)'))
             ->orderBy('day')
             ->get()
             ->keyBy('day');
 
-        $dailySales = $dailySalesQ
+        $dailySales = AffiliateCommission::select(DB::raw('DATE(created_at) as day'), DB::raw('COUNT(*) as sales'))
+            ->where('affiliate_id', $aid)
+            ->whereIn('status', $validStatuses)
+            ->where('created_at', '>=', $chartFrom)
             ->groupBy(DB::raw('DATE(created_at)'))
             ->orderBy('day')
             ->get()
             ->keyBy('day');
-
-        $recentConversionsQ = AffiliateCommission::with('affiliate')->latest();
-        if ($currentAffiliate) {
-            $recentConversionsQ->where('affiliate_id', (int) $currentAffiliate->id);
-        }
-        $recentConversions = $recentConversionsQ->take(10)->get();
 
         $daily = [];
-        $cursor = $from7->copy();
+        $cursor = $chartFrom->copy();
         while ($cursor->lte(now())) {
             $key = $cursor->toDateString();
             $daily[] = [
-                'day'    => $key,
+                'day' => $key,
                 'clicks' => $dailyClicks[$key]->clicks ?? 0,
-                'sales'  => $dailySales[$key]->sales ?? 0,
+                'sales' => $dailySales[$key]->sales ?? 0,
             ];
             $cursor->addDay();
         }
 
+        $recentConversionsQ = AffiliateCommission::with('campaign')
+            ->where('affiliate_id', $aid)
+            ->whereIn('status', $validStatuses)
+            ->latest();
+        if ($from) {
+            $recentConversionsQ->where('created_at', '>=', $from);
+        }
+
         return view('affiliate-analytics', [
-            'clicksLast30'   => $clicksLast30,
-            'sessionsLast30' => $sessionsLast30,
-            'salesLast30'    => $salesLast30,
-            'revenueLast30'  => $revenueLast30,
+            'clicksPeriod' => $clicksPeriod,
+            'sessionsPeriod' => $sessionsPeriod,
+            'salesPeriod' => $salesPeriod,
+            'commissionPeriod' => $commissionPeriod,
+            'orderValuePeriod' => $orderValuePeriod,
             'conversionRate' => $conversionRate,
-            'epc'            => $epc,
-            'topAffiliates'  => $topAffiliates,
-            'recentConversions' => $recentConversions,
-            'daily'          => $daily,
+            'epc' => $epc,
+            'averageOrderValue' => $averageOrderValue,
+            'topCampaigns' => $topCampaigns,
+            'unattributedClicks' => $unattributedClicks,
+            'unattributedConversions' => $unattributedConversions,
+            'unattributedOrderValue' => $unattributedOrderValue,
+            'unattributedCommission' => $unattributedCommission,
+            'recentConversions' => $recentConversionsQ->take(10)->get(),
+            'daily' => $daily,
+            'chartLabel' => $chartFrom->toDateString() === now()->subDays(29)->startOfDay()->toDateString() ? 'Last 30 days' : $period['label'],
+            'currentRange' => $period['range'],
+            'rangeLabel' => $period['label'],
+            'periodFromInput' => $from?->format('Y-m-d\TH:i'),
             'currentAffiliate' => $currentAffiliate,
-            'isAdmin' => $admin,
+            'isAdmin' => false,
             'needsAffiliateSetup' => false,
         ]);
+    }
+
+    public function clicksExport(Request $request)
+    {
+        $affiliate = $this->resolvedAffiliate($request);
+        if (! $affiliate || $this->isAdmin($request)) {
+            abort(404);
+        }
+
+        $period = $this->analyticsPeriod($request);
+        $query = AffiliateClick::query()
+            ->with('campaign:id,name')
+            ->where('affiliate_id', (int) $affiliate->id);
+
+        if ($period['from']) {
+            $query->where('created_at', '>=', $period['from']);
+        }
+
+        $filename = 'stellar-affiliate-traffic-'.strtolower($affiliate->public_code).'-'.now()->format('Y-m-d').'.csv';
+
+        return $this->streamCsv($filename, [
+            'Date', 'Campaign', 'Source', 'Landing URL', 'Referrer', 'Session ID',
+        ], function ($handle) use ($query) {
+            $query->orderBy('id')->chunkById(500, function ($rows) use ($handle) {
+                foreach ($rows as $click) {
+                    fputcsv($handle, array_map([$this, 'csvCell'], [
+                        $click->created_at?->format('Y-m-d H:i:s'),
+                        $click->campaign?->name,
+                        $click->source,
+                        $click->landing_url,
+                        $click->referrer,
+                        $click->session_id,
+                    ]), ',', '"', '');
+                }
+            });
+        });
     }
 
     public function payouts(Request $request)
@@ -726,52 +991,101 @@ class AffiliatePortalController extends Controller
             return redirect()->route('affiliate.onboarding');
         }
 
-        $status = $request->query('status');
+        $status = trim((string) $request->query('status'));
+        $from = trim((string) $request->query('from'));
+        $to = trim((string) $request->query('to'));
+        $pageSize = $this->pageSize($request);
+        $validPayoutStatuses = ['pending', 'processing', 'paid', 'failed'];
 
-        $query = AffiliatePayout::with('affiliate')->orderByDesc('created_at');
+        $query = AffiliatePayout::with('affiliate')
+            ->where('affiliate_id', (int) $currentAffiliate->id)
+            ->orderByDesc('created_at');
 
-        if ($currentAffiliate) {
-            $query->where('affiliate_id', (int) $currentAffiliate->id);
-        }
-
-        if ($status && in_array($status, ['pending', 'processing', 'paid', 'failed'], true)) {
+        if (in_array($status, $validPayoutStatuses, true)) {
             $query->where('status', $status);
+        } else {
+            $status = '';
         }
 
-        $payouts = $query->paginate(25)->withQueryString();
-
-        $availableCommissionQ = AffiliateCommission::where('status', 'approved');
-        $pendingCommissionQ = AffiliateCommission::where('status', 'pending');
-        $paidCommissionQ = AffiliateCommission::where('status', 'paid_out');
-
-        if ($currentAffiliate) {
-            $aid = (int) $currentAffiliate->id;
-            $availableCommissionQ->where('affiliate_id', $aid);
-            $pendingCommissionQ->where('affiliate_id', $aid);
-            $paidCommissionQ->where('affiliate_id', $aid);
+        if ($from !== '') {
+            try {
+                $query->where('created_at', '>=', Carbon::parse($from));
+            } catch (\Throwable) {
+                $from = '';
+            }
+        }
+        if ($to !== '') {
+            try {
+                $query->where('created_at', '<=', Carbon::parse($to));
+            } catch (\Throwable) {
+                $to = '';
+            }
         }
 
-        $availableCommission = $availableCommissionQ->sum('amount');
-        $pendingCommission = $pendingCommissionQ->sum('amount');
-        $paidCommission = $paidCommissionQ->sum('amount');
-
-        $lastPayoutQ = AffiliatePayout::where('status', 'paid')->orderByDesc('created_at');
-        if ($currentAffiliate) {
-            $lastPayoutQ->where('affiliate_id', (int) $currentAffiliate->id);
-        }
-        $lastPayout = $lastPayoutQ->first();
+        $payouts = $query->paginate($pageSize)->withQueryString();
+        $aid = (int) $currentAffiliate->id;
+        $availableCommission = AffiliateCommission::where('affiliate_id', $aid)->where('status', 'approved')->sum('amount');
+        $pendingCommission = AffiliateCommission::where('affiliate_id', $aid)->where('status', 'pending')->sum('amount');
+        $paidCommission = AffiliateCommission::where('affiliate_id', $aid)->where('status', 'paid_out')->sum('amount');
+        $lastPayout = AffiliatePayout::where('affiliate_id', $aid)->where('status', 'paid')->orderByDesc('created_at')->first();
 
         return view('affiliate-payouts', [
-            'payouts'              => $payouts,
-            'availableCommission'  => $availableCommission,
-            'pendingCommission'    => $pendingCommission,
-            'paidCommission'       => $paidCommission,
-            'lastPayout'           => $lastPayout,
-            'currentStatusFilter'  => $status,
+            'payouts' => $payouts,
+            'availableCommission' => $availableCommission,
+            'pendingCommission' => $pendingCommission,
+            'paidCommission' => $paidCommission,
+            'lastPayout' => $lastPayout,
+            'currentStatusFilter' => $status,
+            'currentFromFilter' => $from,
+            'currentToFilter' => $to,
+            'currentPerPage' => $pageSize,
             'currentAffiliate' => $currentAffiliate,
-            'isAdmin' => $admin,
+            'isAdmin' => false,
             'needsAffiliateSetup' => false,
         ]);
+    }
+
+    public function payoutsExport(Request $request)
+    {
+        $affiliate = $this->resolvedAffiliate($request);
+        if (! $affiliate || $this->isAdmin($request)) {
+            abort(404);
+        }
+
+        $status = trim((string) $request->query('status'));
+        $from = trim((string) $request->query('from'));
+        $to = trim((string) $request->query('to'));
+        $query = AffiliatePayout::query()->where('affiliate_id', (int) $affiliate->id);
+
+        if (in_array($status, ['pending', 'processing', 'paid', 'failed'], true)) {
+            $query->where('status', $status);
+        }
+        if ($from !== '') {
+            try { $query->where('created_at', '>=', Carbon::parse($from)); } catch (\Throwable) {}
+        }
+        if ($to !== '') {
+            try { $query->where('created_at', '<=', Carbon::parse($to)); } catch (\Throwable) {}
+        }
+
+        $filename = 'stellar-affiliate-payouts-'.strtolower($affiliate->public_code).'-'.now()->format('Y-m-d').'.csv';
+
+        return $this->streamCsv($filename, [
+            'Created At', 'Amount', 'Currency', 'Status', 'Method', 'Reference', 'Paid At',
+        ], function ($handle) use ($query) {
+            $query->orderBy('id')->chunkById(250, function ($rows) use ($handle) {
+                foreach ($rows as $payout) {
+                    fputcsv($handle, array_map([$this, 'csvCell'], [
+                        $payout->created_at?->format('Y-m-d H:i:s'),
+                        number_format((float) $payout->amount, 6, '.', ''),
+                        $payout->currency,
+                        $payout->status,
+                        $payout->method_type,
+                        $payout->external_reference,
+                        $payout->paid_at?->format('Y-m-d H:i:s'),
+                    ]), ',', '"', '');
+                }
+            });
+        });
     }
 
     public function sales(Request $request)
@@ -787,71 +1101,84 @@ class AffiliatePortalController extends Controller
             return redirect()->route('affiliate.onboarding');
         }
 
-        $status  = $request->query('status');
-        $type = $request->query('type');
-        $affiliateCode = $request->query('affiliate'); // admin-only filter
-        $product = trim((string) $request->query('product'));
+        $filters = $this->commissionFilters($request);
+        $pageSize = $this->pageSize($request);
+        $aid = (int) $currentAffiliate->id;
 
-        $query = AffiliateCommission::with('affiliate')->orderByDesc('created_at');
+        $baseQuery = AffiliateCommission::query()
+            ->with(['affiliate', 'campaign'])
+            ->where('affiliate_id', $aid);
+        $this->applyCommissionFilters($baseQuery, $filters);
 
-        if ($currentAffiliate) {
-            $query->where('affiliate_id', (int) $currentAffiliate->id);
-        } elseif ($admin && $affiliateCode) {
-            $query->whereHas('affiliate', function ($q) use ($affiliateCode) {
-                $q->where('public_code', $affiliateCode);
-            });
-        }
-
-        if ($status && in_array($status, ['pending', 'approved', 'rejected', 'paid_out'], true)) {
-            $query->where('status', $status);
-        }
-
-        if ($type && in_array($type, ['initial', 'recurring'], true)) {
-            $query->where('type', $type);
-        }
-
-        if ($product !== '') {
-            $query->where('product', app(\App\Services\AffiliateCommissionPolicy::class)->normalizeProduct($product));
-        }
-
-        $sales = $query->paginate(25)->withQueryString();
-
-        $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
-        $totalsQ = AffiliateCommission::query()->whereIn('status', $validCommissionStatuses);
-        $last30Q = AffiliateCommission::whereIn('status', $validCommissionStatuses)
-            ->where('created_at', '>=', now()->subDays(30));
-
-        if ($currentAffiliate) {
-            $aid = (int) $currentAffiliate->id;
-            $totalsQ->where('affiliate_id', $aid);
-            $last30Q->where('affiliate_id', $aid);
-        } elseif ($admin && $affiliateCode) {
-            $totalsQ->whereHas('affiliate', fn ($q) => $q->where('public_code', $affiliateCode));
-            $last30Q->whereHas('affiliate', fn ($q) => $q->where('public_code', $affiliateCode));
-        }
-
-        $totalCommission = $totalsQ->sum('amount');
-        $totalSalesCount = (clone $totalsQ)->count();
-        $avgCommission   = $totalSalesCount > 0 ? $totalCommission / $totalSalesCount : 0;
-
-        $last30Commission = $last30Q->sum('amount');
-        $last30Count      = (clone $last30Q)->count();
+        $sales = (clone $baseQuery)->orderByDesc('created_at')->paginate($pageSize)->withQueryString();
+        $matchingCount = (clone $baseQuery)->count();
+        $matchingOrderValue = (clone $baseQuery)->sum('order_amount');
+        $eligibleQuery = (clone $baseQuery)->whereIn('status', ['pending', 'approved', 'paid_out']);
+        $matchingCommission = (clone $eligibleQuery)->sum('amount');
+        $eligibleCount = (clone $eligibleQuery)->count();
+        $avgCommission = $eligibleCount > 0 ? $matchingCommission / $eligibleCount : 0;
+        $hasActiveFilters = collect($filters)->contains(fn ($value) => $value !== '');
 
         return view('affiliate-sales', [
-            'sales'                => $sales,
-            'totalCommission'      => $totalCommission,
-            'totalSalesCount'      => $totalSalesCount,
-            'avgCommission'        => $avgCommission,
-            'last30Commission'     => $last30Commission,
-            'last30Count'          => $last30Count,
-            'currentStatusFilter'  => $status,
-            'currentTypeFilter'    => $type,
-            'currentAffiliateCode' => $affiliateCode,
-            'currentProductFilter' => $product,
+            'sales' => $sales,
+            'matchingCommission' => $matchingCommission,
+            'matchingOrderValue' => $matchingOrderValue,
+            'matchingCount' => $matchingCount,
+            'avgCommission' => $avgCommission,
+            'hasActiveFilters' => $hasActiveFilters,
+            'currentStatusFilter' => $filters['status'],
+            'currentTypeFilter' => $filters['type'],
+            'currentProductFilter' => $filters['product'],
+            'currentSearch' => $filters['q'],
+            'currentFromFilter' => $filters['from'],
+            'currentToFilter' => $filters['to'],
+            'currentPerPage' => $pageSize,
             'currentAffiliate' => $currentAffiliate,
-            'isAdmin' => $admin,
+            'isAdmin' => false,
             'needsAffiliateSetup' => false,
         ]);
+    }
+
+    public function salesExport(Request $request)
+    {
+        $affiliate = $this->resolvedAffiliate($request);
+        if (! $affiliate || $this->isAdmin($request)) {
+            abort(404);
+        }
+
+        $filters = $this->commissionFilters($request);
+        $query = AffiliateCommission::query()
+            ->with('campaign:id,name,source')
+            ->where('affiliate_id', (int) $affiliate->id);
+        $this->applyCommissionFilters($query, $filters);
+
+        $filename = 'stellar-affiliate-conversions-'.strtolower($affiliate->public_code).'-'.now()->format('Y-m-d').'.csv';
+
+        return $this->streamCsv($filename, [
+            'Date', 'Order ID', 'Campaign', 'Source', 'Product', 'Commission Type', 'Order Value', 'Currency',
+            'Rate Decimal', 'Rate %', 'Commission', 'Status', 'Eligible Payout At', 'Payout ID',
+        ], function ($handle) use ($query) {
+            $query->orderBy('id')->chunkById(500, function ($rows) use ($handle) {
+                foreach ($rows as $sale) {
+                    fputcsv($handle, array_map([$this, 'csvCell'], [
+                        $sale->created_at?->format('Y-m-d H:i:s'),
+                        $sale->getRawOriginal('order_id'),
+                        $sale->campaign?->name,
+                        $sale->campaign?->source,
+                        $sale->product,
+                        $sale->type,
+                        $sale->order_amount !== null ? number_format((float) $sale->order_amount, 2, '.', '') : null,
+                        $sale->currency ?: 'EUR',
+                        number_format((float) $sale->rate, 4, '.', ''),
+                        number_format((float) $sale->rate * 100, 4, '.', ''),
+                        number_format((float) $sale->amount, 6, '.', ''),
+                        $sale->status,
+                        $sale->eligible_payout_at?->format('Y-m-d H:i:s'),
+                        $sale->payout_id,
+                    ]), ',', '"', '');
+                }
+            });
+        });
     }
 
     public function orderShow(Request $request, int $commission)

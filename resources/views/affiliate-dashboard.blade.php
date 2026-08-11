@@ -101,6 +101,21 @@
             </section>
         @endif
 
+        @if(!$dashboardIsAdmin && $setupReady && $currentAffiliate)
+            <section class="stellar-card stellar-card-pad stellar-section stellar-quick-actions">
+                <div>
+                    <p class="stellar-eyebrow">Quick actions</p>
+                    <h2 class="stellar-section-title">Get where you need to go.</h2>
+                </div>
+                <div class="stellar-actions">
+                    <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Create campaign</a>
+                    <a href="{{ route('affiliate.sales.export') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Export conversions</a>
+                    <a href="{{ route('affiliate.analytics') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">Open analytics</a>
+                    <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">Support</a>
+                </div>
+            </section>
+        @endif
+
         <section class="stellar-grid-4 stellar-metrics">
             <article class="stellar-card stellar-metric">
                 <span class="stellar-metric-icon">
@@ -234,6 +249,7 @@
                             <th>Order ID</th>
                             <th>Product</th>
                             <th>Type</th>
+                            <th>Order value</th>
                             <th>Commission</th>
                             <th>Status</th>
                         </tr>
@@ -266,6 +282,7 @@
                                 </td>
                                 <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($sale->product) }}</td>
                                 <td>{{ $sale->type === 'initial' ? 'First payment' : ($sale->type === 'recurring' ? 'Recurring' : '—') }}</td>
+                                <td class="strong">{{ $sale->order_amount !== null ? (($sale->currency ?: 'EUR').' '.number_format((float) $sale->order_amount, 2, '.', ',')) : '—' }}</td>
                                 <td class="strong">{{ $sale->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($sale->amount) }}</td>
                                 <td><span class="stellar-badge {{ $statusClass }}">{{ $statusLabel }}</span></td>
                             </tr>

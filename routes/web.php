@@ -61,6 +61,10 @@ Route::middleware(['auth:web', 'affiliate.admin'])
         Route::get('/affiliates', [AffiliateAdminController::class, 'affiliatesIndex'])->name('affiliates.index');
         Route::post('/affiliates', [AffiliateAdminController::class, 'affiliateStore'])->name('affiliates.store');
         Route::get('/affiliates/{affiliate}', [AffiliateAdminController::class, 'affiliateShow'])->name('affiliates.show');
+        Route::get('/affiliates/{affiliate}/exports/conversions', [AffiliateAdminController::class, 'affiliateConversionsExport'])->name('affiliates.exports.conversions');
+        Route::get('/affiliates/{affiliate}/exports/campaigns', [AffiliateAdminController::class, 'affiliateCampaignsExport'])->name('affiliates.exports.campaigns');
+        Route::get('/affiliates/{affiliate}/exports/tracking', [AffiliateAdminController::class, 'affiliateTrackingExport'])->name('affiliates.exports.tracking');
+        Route::get('/affiliates/{affiliate}/exports/payouts', [AffiliateAdminController::class, 'affiliatePayoutsExport'])->name('affiliates.exports.payouts');
         Route::post('/affiliates/{affiliate}/view-as-affiliate', [AffiliateAdminController::class, 'startAffiliateView'])->name('affiliates.view-as');
         Route::patch('/affiliates/{affiliate}', [AffiliateAdminController::class, 'affiliateUpdate'])->name('affiliates.update');
         Route::put('/affiliates/{affiliate}/rates', [AffiliateAdminController::class, 'affiliateRateUpdate'])->name('affiliates.rates.update');
@@ -114,6 +118,9 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
         Route::get('/sales', [AffiliatePortalController::class, 'sales'])
             ->name('affiliate.sales');
 
+        Route::get('/sales/export', [AffiliatePortalController::class, 'salesExport'])
+            ->name('affiliate.sales.export');
+
         Route::get('/conversions/{commission}/order', [AffiliatePortalController::class, 'orderShow'])
             ->whereNumber('commission')
             ->middleware('throttle:60,1')
@@ -122,6 +129,9 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
         // Campaigns
         Route::get('/campaigns', [AffiliatePortalController::class, 'campaignsIndex'])
             ->name('affiliate.campaigns.index');
+
+        Route::get('/campaigns/export', [AffiliatePortalController::class, 'campaignsExport'])
+            ->name('affiliate.campaigns.export');
 
         Route::post('/campaigns', [AffiliatePortalController::class, 'campaignsStore'])
             ->name('affiliate.campaigns.store');
@@ -138,9 +148,15 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
         Route::get('/payouts', [AffiliatePortalController::class, 'payouts'])
             ->name('affiliate.payouts');
 
+        Route::get('/payouts/export', [AffiliatePortalController::class, 'payoutsExport'])
+            ->name('affiliate.payouts.export');
+
         // Analytics
         Route::get('/analytics', [AffiliatePortalController::class, 'analytics'])
             ->name('affiliate.analytics');
+
+        Route::get('/analytics/traffic-export', [AffiliatePortalController::class, 'clicksExport'])
+            ->name('affiliate.analytics.traffic.export');
 
         // Settings
         Route::get('/settings', [AffiliatePortalController::class, 'settings'])

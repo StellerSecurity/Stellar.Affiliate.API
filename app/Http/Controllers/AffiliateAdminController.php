@@ -30,6 +30,71 @@ class AffiliateAdminController extends Controller
         ];
     }
 
+    private function csvCell(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        $text = (string) $value;
+        $formulaCandidate = ltrim($text);
+
+        if ($formulaCandidate !== '' && preg_match('/^[=+\-@]/', $formulaCandidate) === 1) {
+            return "'".$text;
+        }
+
+        return $text;
+    }
+
+    private function streamCsv(string $filename, array $headers, callable $writeRows)
+    {
+        return response()->streamDownload(function () use ($headers, $writeRows) {
+            echo "\xEF\xBB\xBF";
+            $handle = fopen('php://output', 'wb');
+            fputcsv($handle, $headers, ',', '"', '');
+            $writeRows($handle);
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    private function affiliateExportFilename(Affiliate $affiliate, string $report): string
+    {
+        $code = strtolower(preg_replace('/[^a-zA-Z0-9_-]+/', '-', (string) $affiliate->public_code) ?: 'affiliate');
+
+        return 'stellar-affiliate-'.$code.'-'.$report.'-'.now()->format('Y-m-d').'.csv';
+    }
+
+    private function campaignDestination(AffiliateCampaign $campaign): string
+    {
+        $stored = trim((string) $campaign->redirect_url);
+        $product = (string) ($campaign->product ?: 'esim');
+
+        return $stored !== ''
+            ? $stored
+            : trim((string) config('affiliate.products.'.$product.'.default_redirect_url', ''));
+    }
+
+    private function campaignTrackingUrl(Affiliate $affiliate, AffiliateCampaign $campaign): string
+    {
+        $params = array_filter([
+            'src' => $campaign->source,
+            'campaign' => $campaign->name,
+            'sub1' => $campaign->sub_id1,
+            'sub2' => $campaign->sub_id2,
+            'product' => $campaign->product ?: 'esim',
+            'redirect' => $this->campaignDestination($campaign),
+        ], static fn ($value) => $value !== null && $value !== '');
+
+        $url = route('affiliate.track.public', ['code' => $affiliate->public_code]);
+        $query = http_build_query($params);
+
+        return $query === '' ? $url : $url.'?'.$query;
+    }
+
     private function requireProgramManager(Request $request): void
     {
         if (! $request->user()?->canManageAffiliateProgram()) {
@@ -316,6 +381,213 @@ class AffiliateAdminController extends Controller
             'rateMatrix',
             'totals'
         )));
+    }
+
+    public function affiliateConversionsExport(Request $request, Affiliate $affiliate)
+    {
+        $status = trim((string) $request->query('status'));
+        $type = trim((string) $request->query('type'));
+        $product = trim((string) $request->query('product'));
+        $search = trim((string) $request->query('q'));
+        $from = trim((string) $request->query('from'));
+        $to = trim((string) $request->query('to'));
+
+        $query = AffiliateCommission::query()
+            ->with('campaign:id,name,source')
+            ->where('affiliate_id', (int) $affiliate->id);
+
+        if (in_array($status, ['pending', 'approved', 'paid_out', 'rejected'], true)) {
+            $query->where('status', $status);
+        }
+        if (in_array($type, ['initial', 'recurring'], true)) {
+            $query->where('type', $type);
+        }
+        if (in_array($product, ['esim', 'vpn', 'antivirus'], true)) {
+            $query->where('product', $product);
+        }
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('order_id', 'like', "%{$search}%")
+                    ->orWhere('external_payment_id', 'like', "%{$search}%")
+                    ->orWhereHas('campaign', function ($campaignQuery) use ($search) {
+                        $campaignQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('source', 'like', "%{$search}%");
+                    });
+            });
+        }
+        if ($from !== '') {
+            try {
+                $query->where('created_at', '>=', Carbon::parse($from));
+            } catch (\Throwable) {
+            }
+        }
+        if ($to !== '') {
+            try {
+                $query->where('created_at', '<=', Carbon::parse($to));
+            } catch (\Throwable) {
+            }
+        }
+
+        return $this->streamCsv(
+            $this->affiliateExportFilename($affiliate, 'conversions'),
+            [
+                'Date', 'Order ID', 'Campaign', 'Source', 'Product', 'Commission Type', 'Order Value', 'Currency',
+                'Rate Decimal', 'Rate %', 'Commission', 'Status', 'Eligible Payout At', 'Payout ID',
+            ],
+            function ($handle) use ($query) {
+                $query->orderBy('id')->chunkById(500, function ($rows) use ($handle) {
+                    foreach ($rows as $commission) {
+                        fputcsv($handle, array_map([$this, 'csvCell'], [
+                            $commission->created_at?->format('Y-m-d H:i:s'),
+                            $commission->getRawOriginal('order_id'),
+                            $commission->campaign?->name,
+                            $commission->campaign?->source,
+                            $commission->product,
+                            $commission->type,
+                            $commission->order_amount !== null ? number_format((float) $commission->order_amount, 2, '.', '') : null,
+                            $commission->currency ?: 'EUR',
+                            number_format((float) $commission->rate, 4, '.', ''),
+                            number_format((float) $commission->rate * 100, 4, '.', ''),
+                            number_format((float) $commission->amount, 6, '.', ''),
+                            $commission->status,
+                            $commission->eligible_payout_at?->format('Y-m-d H:i:s'),
+                            $commission->payout_id,
+                        ]), ',', '"', '');
+                    }
+                });
+            }
+        );
+    }
+
+    public function affiliateCampaignsExport(Request $request, Affiliate $affiliate)
+    {
+        $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
+        $query = AffiliateCampaign::query()
+            ->where('affiliate_id', (int) $affiliate->id)
+            ->withCount(['clicks', 'sessions'])
+            ->withCount(['commissions as conversions_count' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)])
+            ->withSum(['commissions as commission_total' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)], 'amount')
+            ->withSum(['commissions as order_value_total' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)], 'order_amount');
+
+        return $this->streamCsv(
+            $this->affiliateExportFilename($affiliate, 'campaigns'),
+            [
+                'Campaign ID', 'Campaign', 'Product', 'Source', 'Sub ID 1', 'Sub ID 2', 'Destination URL',
+                'Clicks', 'Sessions', 'Conversions', 'Conversion Rate %', 'Order Value', 'Commission', 'Tracking URL', 'Created At',
+            ],
+            function ($handle) use ($query, $affiliate) {
+                $query->orderBy('id')->chunkById(250, function ($rows) use ($handle, $affiliate) {
+                    foreach ($rows as $campaign) {
+                        $clicks = (int) ($campaign->clicks_count ?? 0);
+                        $conversions = (int) ($campaign->conversions_count ?? 0);
+                        $conversionRate = $clicks > 0 ? ($conversions / $clicks) * 100 : 0;
+
+                        fputcsv($handle, array_map([$this, 'csvCell'], [
+                            $campaign->id,
+                            $campaign->name,
+                            $campaign->product ?: 'esim',
+                            $campaign->source,
+                            $campaign->sub_id1,
+                            $campaign->sub_id2,
+                            $this->campaignDestination($campaign),
+                            $clicks,
+                            (int) ($campaign->sessions_count ?? 0),
+                            $conversions,
+                            number_format($conversionRate, 4, '.', ''),
+                            number_format((float) ($campaign->order_value_total ?? 0), 2, '.', ''),
+                            number_format((float) ($campaign->commission_total ?? 0), 6, '.', ''),
+                            $this->campaignTrackingUrl($affiliate, $campaign),
+                            $campaign->created_at?->format('Y-m-d H:i:s'),
+                        ]), ',', '"', '');
+                    }
+                });
+            }
+        );
+    }
+
+    public function affiliateTrackingExport(Request $request, Affiliate $affiliate)
+    {
+        $from = trim((string) $request->query('from'));
+        $to = trim((string) $request->query('to'));
+        $query = AffiliateClick::query()
+            ->with('campaign:id,name')
+            ->where('affiliate_id', (int) $affiliate->id);
+
+        if ($from !== '') {
+            try {
+                $query->where('created_at', '>=', Carbon::parse($from));
+            } catch (\Throwable) {
+            }
+        }
+        if ($to !== '') {
+            try {
+                $query->where('created_at', '<=', Carbon::parse($to));
+            } catch (\Throwable) {
+            }
+        }
+
+        return $this->streamCsv(
+            $this->affiliateExportFilename($affiliate, 'tracking'),
+            ['Date', 'Campaign', 'Source', 'Landing URL', 'Referrer', 'Session ID'],
+            function ($handle) use ($query) {
+                $query->orderBy('id')->chunkById(500, function ($rows) use ($handle) {
+                    foreach ($rows as $click) {
+                        fputcsv($handle, array_map([$this, 'csvCell'], [
+                            $click->created_at?->format('Y-m-d H:i:s'),
+                            $click->campaign?->name,
+                            $click->source,
+                            $click->landing_url,
+                            $click->referrer,
+                            $click->session_id,
+                        ]), ',', '"', '');
+                    }
+                });
+            }
+        );
+    }
+
+    public function affiliatePayoutsExport(Request $request, Affiliate $affiliate)
+    {
+        $status = trim((string) $request->query('status'));
+        $from = trim((string) $request->query('from'));
+        $to = trim((string) $request->query('to'));
+        $query = Payout::query()->where('affiliate_id', (int) $affiliate->id);
+
+        if (in_array($status, ['pending', 'processing', 'paid', 'failed'], true)) {
+            $query->where('status', $status);
+        }
+        if ($from !== '') {
+            try {
+                $query->where('created_at', '>=', Carbon::parse($from));
+            } catch (\Throwable) {
+            }
+        }
+        if ($to !== '') {
+            try {
+                $query->where('created_at', '<=', Carbon::parse($to));
+            } catch (\Throwable) {
+            }
+        }
+
+        return $this->streamCsv(
+            $this->affiliateExportFilename($affiliate, 'payouts'),
+            ['Created At', 'Amount', 'Currency', 'Status', 'Method', 'Reference', 'Paid At'],
+            function ($handle) use ($query) {
+                $query->orderBy('id')->chunkById(250, function ($rows) use ($handle) {
+                    foreach ($rows as $payout) {
+                        fputcsv($handle, array_map([$this, 'csvCell'], [
+                            $payout->created_at?->format('Y-m-d H:i:s'),
+                            number_format((float) $payout->amount, 6, '.', ''),
+                            $payout->currency,
+                            $payout->status,
+                            $payout->method_type,
+                            $payout->external_reference,
+                            $payout->paid_at?->format('Y-m-d H:i:s'),
+                        ]), ',', '"', '');
+                    }
+                });
+            }
+        );
     }
 
     public function affiliateUpdate(Request $request, Affiliate $affiliate)

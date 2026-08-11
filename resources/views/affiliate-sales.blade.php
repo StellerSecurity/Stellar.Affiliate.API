@@ -4,15 +4,21 @@
 
 @section('content')
     @php
-        $salesIsAdmin = (bool) ($isAdmin ?? false);
+        $exportQuery = request()->except('page');
+        $scopeLabel = $hasActiveFilters ? 'Filtered' : 'All time';
     @endphp
 
     <section class="stellar-page-header">
         <div>
             <p class="stellar-eyebrow">Earnings</p>
             <h1 class="stellar-page-title">Conversions</h1>
-            <p class="stellar-page-copy">View every conversion, order value, commission and status.</p>
+            <p class="stellar-page-copy">Reconcile every order, order value, rate and commission.</p>
         </div>
+        @if(!($needsAffiliateSetup ?? false))
+            <div class="stellar-actions">
+                <a href="{{ route('affiliate.sales.export', $exportQuery) }}" class="stellar-btn stellar-btn-secondary" data-download>Export CSV</a>
+            </div>
+        @endif
     </section>
 
     @if($needsAffiliateSetup ?? false)
@@ -29,51 +35,41 @@
     @else
         <section class="stellar-grid-4">
             <article class="stellar-card stellar-metric">
-                <div class="stellar-metric-label">All-time commission</div>
-                <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($totalCommission) }}</div>
-                <div class="stellar-metric-detail">All pending, approved and paid commissions.</div>
+                <div class="stellar-metric-label">{{ $scopeLabel }} commission</div>
+                <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($matchingCommission) }}</div>
+                <div class="stellar-metric-detail">Pending, approved and paid commissions only.</div>
             </article>
             <article class="stellar-card stellar-metric">
-                <div class="stellar-metric-label">All-time conversions</div>
-                <div class="stellar-metric-value">{{ number_format($totalSalesCount) }}</div>
-                <div class="stellar-metric-detail">All pending, approved and paid conversions.</div>
+                <div class="stellar-metric-label">{{ $scopeLabel }} conversions</div>
+                <div class="stellar-metric-value">{{ number_format($matchingCount) }}</div>
+                <div class="stellar-metric-detail">Includes rejected rows when that status is visible.</div>
+            </article>
+            <article class="stellar-card stellar-metric">
+                <div class="stellar-metric-label">{{ $scopeLabel }} order value</div>
+                <div class="stellar-metric-value">€{{ number_format((float) $matchingOrderValue, 2, '.', ',') }}</div>
+                <div class="stellar-metric-detail">Customer order totals after discounts.</div>
             </article>
             <article class="stellar-card stellar-metric">
                 <div class="stellar-metric-label">Average commission</div>
                 <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($avgCommission) }}</div>
-                <div class="stellar-metric-detail">Average commission per conversion.</div>
-            </article>
-            <article class="stellar-card stellar-metric">
-                <div class="stellar-metric-label">Last 30 days</div>
-                <div class="stellar-metric-value">€{{ \App\Support\CommissionMath::display($last30Commission) }}</div>
-                <div class="stellar-metric-detail">{{ number_format($last30Count) }} conversion{{ $last30Count === 1 ? '' : 's' }}.</div>
+                <div class="stellar-metric-detail">Average across non-rejected conversions in this view.</div>
             </article>
         </section>
 
         <section class="stellar-card stellar-card-pad stellar-section">
             <div class="stellar-section-head">
                 <div>
-                    <p class="stellar-eyebrow">Commission status</p>
-                    <h2 class="stellar-section-title">Know what each status means</h2>
-                </div>
-            </div>
-            <div class="stellar-status-guide">
-                <div><span class="stellar-badge is-warning">Pending review</span><p>Recorded, but not approved yet.</p></div>
-                <div><span class="stellar-badge is-success">Approved</span><p>Ready to be included in a payout.</p></div>
-                <div><span class="stellar-badge is-success">Paid out</span><p>The commission has been paid.</p></div>
-                <div><span class="stellar-badge is-danger">Rejected</span><p>Not included in earnings or payout totals.</p></div>
-            </div>
-        </section>
-
-        <section class="stellar-card stellar-card-pad stellar-section">
-            <div class="stellar-section-head">
-                <div>
-                    <h2 class="stellar-section-title">Filter conversions</h2>
-                    <p class="stellar-section-copy">Narrow down your conversions.</p>
+                    <h2 class="stellar-section-title">Find a conversion</h2>
+                    <p class="stellar-section-copy">Search by order or campaign, then narrow by date, product or status.</p>
                 </div>
             </div>
 
-            <form method="GET" class="stellar-filterbar">
+            <form method="GET" class="stellar-filterbar stellar-filterbar-wide">
+                <div class="stellar-field stellar-filter-search">
+                    <label for="conversion-search" class="stellar-label">Search</label>
+                    <input id="conversion-search" type="search" name="q" value="{{ $currentSearch }}" class="stellar-input" placeholder="Order ID or campaign">
+                </div>
+
                 <div class="stellar-field">
                     <label for="conversion-status" class="stellar-label">Status</label>
                     <select id="conversion-status" name="status" class="stellar-select">
@@ -86,34 +82,49 @@
                 </div>
 
                 <div class="stellar-field">
-                    <label for="conversion-type" class="stellar-label">Commission type</label>
+                    <label for="conversion-type" class="stellar-label">Type</label>
                     <select id="conversion-type" name="type" class="stellar-select">
                         <option value="">All types</option>
                         <option value="initial" {{ $currentTypeFilter === 'initial' ? 'selected' : '' }}>First payment</option>
                         <option value="recurring" {{ $currentTypeFilter === 'recurring' ? 'selected' : '' }}>Recurring</option>
                     </select>
                 </div>
+
                 <div class="stellar-field">
                     <label for="conversion-product" class="stellar-label">Product</label>
                     <select id="conversion-product" name="product" class="stellar-select">
                         <option value="">All products</option>
-                        <option value="vpn" {{ ($currentProductFilter ?? '') === 'vpn' ? 'selected' : '' }}>Stellar VPN</option>
-                        <option value="antivirus" {{ ($currentProductFilter ?? '') === 'antivirus' ? 'selected' : '' }}>Stellar Antivirus</option>
-                        <option value="esim" {{ ($currentProductFilter ?? '') === 'esim' ? 'selected' : '' }}>Stellar eSIM</option>
+                        <option value="esim" {{ $currentProductFilter === 'esim' ? 'selected' : '' }}>Stellar eSIM</option>
+                        <option value="vpn" {{ $currentProductFilter === 'vpn' ? 'selected' : '' }}>Stellar VPN</option>
+                        <option value="antivirus" {{ $currentProductFilter === 'antivirus' ? 'selected' : '' }}>Stellar Antivirus</option>
                     </select>
                 </div>
 
-                @if($salesIsAdmin)
-                    <div class="stellar-field">
-                        <label for="conversion-affiliate" class="stellar-label">Affiliate code</label>
-                        <input id="conversion-affiliate" name="affiliate" value="{{ $currentAffiliateCode }}" class="stellar-input" placeholder="e.g. AFF123">
-                    </div>
-                @endif
+                <div class="stellar-field">
+                    <label for="conversion-from" class="stellar-label">From</label>
+                    <input id="conversion-from" type="datetime-local" name="from" value="{{ $currentFromFilter }}" class="stellar-input">
+                </div>
 
-                <button type="submit" class="stellar-btn stellar-btn-primary">Apply filters</button>
-                @if($currentStatusFilter || $currentTypeFilter || ($currentProductFilter ?? false) || ($salesIsAdmin && $currentAffiliateCode))
-                    <a href="{{ route('affiliate.sales') }}" class="stellar-btn stellar-btn-secondary">Clear</a>
-                @endif
+                <div class="stellar-field">
+                    <label for="conversion-to" class="stellar-label">To</label>
+                    <input id="conversion-to" type="datetime-local" name="to" value="{{ $currentToFilter }}" class="stellar-input">
+                </div>
+
+                <div class="stellar-field">
+                    <label for="conversion-per-page" class="stellar-label">Rows</label>
+                    <select id="conversion-per-page" name="per_page" class="stellar-select">
+                        @foreach([25, 50, 100] as $size)
+                            <option value="{{ $size }}" {{ $currentPerPage === $size ? 'selected' : '' }}>{{ $size }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="stellar-filter-actions">
+                    <button type="submit" class="stellar-btn stellar-btn-primary">Apply filters</button>
+                    @if($hasActiveFilters || $currentPerPage !== 25)
+                        <a href="{{ route('affiliate.sales') }}" class="stellar-btn stellar-btn-secondary">Clear</a>
+                    @endif
+                </div>
             </form>
         </section>
 
@@ -121,15 +132,16 @@
             <div class="stellar-section-head">
                 <div>
                     <h2 class="stellar-section-title">Conversion ledger</h2>
-                    <p class="stellar-section-copy">Every conversion with its order value, rate, commission and payout status.</p>
+                    <p class="stellar-section-copy">{{ number_format($matchingCount) }} matching conversion{{ $matchingCount === 1 ? '' : 's' }}.</p>
                 </div>
+                <a href="{{ route('affiliate.sales.export', $exportQuery) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Export current view</a>
             </div>
 
             @if($sales->isEmpty())
                 <div class="stellar-empty">
                     <div>
                         <span class="stellar-empty-icon">↗</span>
-                        @if($currentStatusFilter || $currentTypeFilter || ($currentProductFilter ?? false) || ($salesIsAdmin && $currentAffiliateCode))
+                        @if($hasActiveFilters)
                             <h3>No conversions match these filters</h3>
                             <p>Clear the filters to return to the full conversion ledger.</p>
                             <div class="stellar-actions" style="justify-content: center;">
@@ -150,8 +162,8 @@
                         <thead>
                         <tr>
                             <th>Date</th>
-                            @if($salesIsAdmin)<th>Affiliate</th>@endif
                             <th>Order ID</th>
+                            <th>Campaign</th>
                             <th>Product</th>
                             <th>Type</th>
                             <th>Order value</th>
@@ -171,12 +183,15 @@
                                     'rejected' => 'is-danger',
                                     default => '',
                                 };
-                                $statusLabel = match($status) { 'paid_out' => 'Paid out', 'pending' => 'Pending review', default => ucfirst($status) };
+                                $statusLabel = match($status) {
+                                    'paid_out' => 'Paid out',
+                                    'pending' => 'Pending review',
+                                    default => ucfirst($status),
+                                };
                                 $rate = (float) $sale->rate;
                             @endphp
                             <tr>
                                 <td>{{ $sale->created_at?->format('M j, Y · H:i') }}</td>
-                                @if($salesIsAdmin)<td class="strong">{{ $sale->affiliate?->public_code ?: '—' }}</td>@endif
                                 <td>
                                     @if($orderId !== '-')
                                         <a href="{{ route('affiliate.orders.show', ['commission' => $sale->id]) }}" class="stellar-order-link" title="View order {{ $orderId }}">
@@ -186,6 +201,10 @@
                                     @else
                                         <span class="stellar-code">—</span>
                                     @endif
+                                </td>
+                                <td>
+                                    <strong>{{ $sale->campaign?->name ?: 'Legacy' }}</strong>
+                                    @if($sale->campaign?->source)<div class="stellar-cell-sub">{{ ucfirst($sale->campaign->source) }}</div>@endif
                                 </td>
                                 <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($sale->product) }}</td>
                                 <td>{{ $sale->type === 'initial' ? 'First payment' : ($sale->type === 'recurring' ? 'Recurring' : '—') }}</td>

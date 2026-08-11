@@ -124,6 +124,12 @@
             return;
         }
 
+        if (control.matches('[data-download]')) {
+            setLoading(control);
+            window.setTimeout(() => restoreControl(control), 1400);
+            return;
+        }
+
         if (control.matches('[data-copy]')) {
             event.preventDefault();
             const value = control.getAttribute('data-copy') || '';

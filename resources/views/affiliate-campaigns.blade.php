@@ -29,13 +29,9 @@
         </div>
 
         @if(!$needsSetup && $campaigns->total() > 0)
-            <form method="GET" class="stellar-filterbar" role="search">
-                <div class="stellar-field">
-                    <label class="stellar-label" for="campaign-search">Search</label>
-                    <input id="campaign-search" type="search" name="q" value="{{ $search }}" class="stellar-input" placeholder="Campaign or source">
-                </div>
-                <button type="submit" class="stellar-btn stellar-btn-secondary">Search</button>
-            </form>
+            <div class="stellar-actions">
+                <a href="{{ route('affiliate.campaigns.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary" data-download>Export CSV</a>
+            </div>
         @endif
     </section>
 
@@ -190,23 +186,73 @@
             </div>
         </section>
 
+        <section class="stellar-card stellar-card-pad stellar-section">
+            <div class="stellar-section-head">
+                <div>
+                    <h2 class="stellar-section-title">Find a campaign</h2>
+                    <p class="stellar-section-copy">Filter links by product, traffic source or campaign name.</p>
+                </div>
+            </div>
+            <form method="GET" class="stellar-filterbar stellar-filterbar-wide" role="search">
+                <div class="stellar-field stellar-filter-search">
+                    <label class="stellar-label" for="campaign-search">Search</label>
+                    <input id="campaign-search" type="search" name="q" value="{{ $search }}" class="stellar-input" placeholder="Campaign, source or Sub ID">
+                </div>
+                <div class="stellar-field">
+                    <label class="stellar-label" for="campaign-product-filter">Product</label>
+                    <select id="campaign-product-filter" name="product" class="stellar-select">
+                        <option value="">All products</option>
+                        <option value="esim" {{ $currentProductFilter === 'esim' ? 'selected' : '' }}>Stellar eSIM</option>
+                        <option value="vpn" {{ $currentProductFilter === 'vpn' ? 'selected' : '' }}>Stellar VPN</option>
+                        <option value="antivirus" {{ $currentProductFilter === 'antivirus' ? 'selected' : '' }}>Stellar Antivirus</option>
+                    </select>
+                </div>
+                <div class="stellar-field">
+                    <label class="stellar-label" for="campaign-source-filter">Source</label>
+                    <select id="campaign-source-filter" name="source" class="stellar-select">
+                        <option value="">All sources</option>
+                        @foreach(['youtube' => 'YouTube', 'instagram' => 'Instagram', 'tiktok' => 'TikTok', 'blog' => 'Blog / website', 'newsletter' => 'Newsletter', 'other' => 'Other'] as $value => $label)
+                            <option value="{{ $value }}" {{ $currentSourceFilter === $value ? 'selected' : '' }}>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="stellar-field">
+                    <label class="stellar-label" for="campaign-per-page">Rows</label>
+                    <select id="campaign-per-page" name="per_page" class="stellar-select">
+                        @foreach([25, 50, 100] as $size)
+                            <option value="{{ $size }}" {{ $currentPerPage === $size ? 'selected' : '' }}>{{ $size }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="stellar-filter-actions">
+                    <button type="submit" class="stellar-btn stellar-btn-primary">Apply filters</button>
+                    @if($search || $currentProductFilter || $currentSourceFilter || $currentPerPage !== 25)
+                        <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-secondary">Clear</a>
+                    @endif
+                </div>
+            </form>
+        </section>
+
         <section class="stellar-section">
             <div class="stellar-section-head">
                 <div>
                     <h2 class="stellar-section-title">Your campaign links</h2>
                     <p class="stellar-section-copy">{{ $campaigns->total() }} campaign{{ $campaigns->total() === 1 ? '' : 's' }} found.</p>
                 </div>
+                @if($campaigns->total() > 0)
+                    <a href="{{ route('affiliate.campaigns.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Export current view</a>
+                @endif
             </div>
 
             @if($campaigns->isEmpty())
                 <div class="stellar-card stellar-empty">
                     <div>
                         <span class="stellar-empty-icon">+</span>
-                        @if($search)
-                            <h3>No campaigns found</h3>
-                            <p>No campaign matches “{{ $search }}”.</p>
+                        @if($search || $currentProductFilter || $currentSourceFilter)
+                            <h3>No campaigns match these filters</h3>
+                            <p>Clear the filters to return to all campaign links.</p>
                             <div class="stellar-actions" style="justify-content: center;">
-                                <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">Clear search</a>
+                                <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">Clear filters</a>
                             </div>
                         @else
                             <h3>No campaigns yet</h3>
@@ -267,9 +313,16 @@
                                 </div>
                             @endif
 
+                            @php
+                                $campaignClicks = (int) ($campaign->clicks_count ?? 0);
+                                $campaignConversions = (int) ($campaign->conversions_count ?? 0);
+                                $campaignConversionRate = $campaignClicks > 0 ? ($campaignConversions / $campaignClicks) * 100 : 0;
+                            @endphp
                             <div class="stellar-campaign-performance">
-                                <div><span>Clicks</span><strong>{{ number_format((int) ($campaign->clicks_count ?? 0)) }}</strong></div>
-                                <div><span>Conversions</span><strong>{{ number_format((int) ($campaign->conversions_count ?? 0)) }}</strong></div>
+                                <div><span>Clicks</span><strong>{{ number_format($campaignClicks) }}</strong></div>
+                                <div><span>Conversions</span><strong>{{ number_format($campaignConversions) }}</strong></div>
+                                <div><span>Conv. rate</span><strong>{{ number_format($campaignConversionRate, 2) }}%</strong></div>
+                                <div><span>Order value</span><strong>€{{ number_format((float) ($campaign->order_value_total ?? 0), 2, '.', ',') }}</strong></div>
                                 <div><span>Commission</span><strong>€{{ \App\Support\CommissionMath::display($campaign->commission_total ?? 0) }}</strong></div>
                             </div>
 

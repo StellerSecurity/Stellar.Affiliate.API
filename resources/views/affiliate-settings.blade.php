@@ -35,6 +35,9 @@
                 <p class="stellar-field-help" style="margin-top:16px;">Change the destination for any tracking link from Campaigns.</p>
                 <div class="stellar-actions">
                     <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Manage campaigns</a>
+                    @if($currentAffiliate?->public_code)
+                        <button type="button" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-copy="{{ $currentAffiliate->public_code }}">Copy affiliate code</button>
+                    @endif
                 </div>
             </article>
 
@@ -86,6 +89,34 @@
                     <div><strong>Stellar eSIM</strong><span>Your rate</span></div>
                     <div class="stellar-rate-value">{{ rtrim(rtrim(number_format($esimRate * 100, 2), '0'), '.') }}%</div>
                     <div class="stellar-rate-source">Every eSIM sale</div>
+                </article>
+            </div>
+        </section>
+
+        <section class="stellar-card stellar-card-pad stellar-section">
+            <div class="stellar-section-head">
+                <div>
+                    <p class="stellar-eyebrow">Data</p>
+                    <h2 class="stellar-section-title">Export your reports</h2>
+                    <p class="stellar-section-copy">Download clean CSV files for reconciliation, reporting or your own analytics.</p>
+                </div>
+            </div>
+            <div class="stellar-export-grid">
+                <article class="stellar-export-card">
+                    <div><strong>Conversions</strong><span>Orders, values, rates, commission and payout status.</span></div>
+                    <a href="{{ route('affiliate.sales.export') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
+                </article>
+                <article class="stellar-export-card">
+                    <div><strong>Campaigns</strong><span>Links, clicks, conversions, order value and commission.</span></div>
+                    <a href="{{ route('affiliate.campaigns.export') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
+                </article>
+                <article class="stellar-export-card">
+                    <div><strong>Traffic</strong><span>Tracked clicks, campaign, source, landing URL and referrer.</span></div>
+                    <a href="{{ route('affiliate.analytics.traffic.export', ['range' => 'all']) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
+                </article>
+                <article class="stellar-export-card">
+                    <div><strong>Payouts</strong><span>Payout amounts, methods, references and status history.</span></div>
+                    <a href="{{ route('affiliate.payouts.export') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
                 </article>
             </div>
         </section>
