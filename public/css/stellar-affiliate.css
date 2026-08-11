@@ -3100,12 +3100,20 @@ summary:focus-visible {
 
 /* Export date range */
 .stellar-export-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     width: min(620px, calc(100vw - 32px));
+    max-width: none;
+    max-height: calc(100dvh - 32px);
+    margin: 0;
     border: 0;
     padding: 0;
     border-radius: 28px;
     background: transparent;
     box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+    overflow: auto;
 }
 
 .stellar-export-dialog::backdrop {
@@ -3185,6 +3193,11 @@ summary:focus-visible {
 }
 
 @media (max-width: 640px) {
+    .stellar-export-dialog {
+        width: calc(100vw - 24px);
+        max-height: calc(100dvh - 24px);
+    }
+
     .stellar-export-panel { padding: 22px; border-radius: 22px; }
     .stellar-export-grid { grid-template-columns: 1fr; }
     .stellar-export-actions { display: grid; grid-template-columns: 1fr 1fr; }
