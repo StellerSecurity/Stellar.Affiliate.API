@@ -1209,19 +1209,32 @@ class AffiliatePortalController extends Controller
             ->where('affiliate_id', (int) $affiliate->id);
         $this->applyCommissionFilters($query, $filters);
 
+        $campaignCandidates = AffiliateCampaign::query()
+            ->where('affiliate_id', (int) $affiliate->id)
+            ->orderBy('id')
+            ->limit(2)
+            ->get(['id', 'name', 'source']);
+        $singleCampaignFallback = $campaignCandidates->count() === 1
+            ? $campaignCandidates->first()
+            : null;
+
         $filename = 'stellar-affiliate-conversions-'.strtolower($affiliate->public_code).'-'.now()->format('Y-m-d').'.csv';
 
         return $this->streamCsv($filename, [
             'Date', 'Order ID', 'Campaign', 'Source', 'Product', 'Commission Type', 'Order Value', 'Currency',
             'Rate Decimal', 'Rate %', 'Commission', 'Status', 'Eligible Payout At', 'Payout ID',
-        ], function ($handle) use ($query) {
-            $query->orderBy('id')->chunkById(500, function ($rows) use ($handle) {
+        ], function ($handle) use ($query, $singleCampaignFallback) {
+            $query->orderBy('id')->chunkById(500, function ($rows) use ($handle, $singleCampaignFallback) {
                 foreach ($rows as $sale) {
+                    $campaign = $sale->campaign ?: $singleCampaignFallback;
+                    $campaignName = $campaign?->name ?: 'Legacy / unattributed';
+                    $campaignSource = $campaign?->source;
+
                     fputcsv($handle, array_map([$this, 'csvCell'], [
                         $sale->created_at?->format('Y-m-d H:i:s'),
                         $sale->getRawOriginal('order_id'),
-                        $sale->campaign?->name,
-                        $sale->campaign?->source,
+                        $campaignName,
+                        $campaignSource,
                         $sale->product,
                         $sale->type,
                         $sale->order_amount !== null ? number_format((float) $sale->order_amount, 2, '.', '') : null,

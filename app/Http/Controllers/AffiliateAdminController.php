@@ -456,20 +456,33 @@ class AffiliateAdminController extends Controller
             }
         }
 
+        $campaignCandidates = AffiliateCampaign::query()
+            ->where('affiliate_id', (int) $affiliate->id)
+            ->orderBy('id')
+            ->limit(2)
+            ->get(['id', 'name', 'source']);
+        $singleCampaignFallback = $campaignCandidates->count() === 1
+            ? $campaignCandidates->first()
+            : null;
+
         return $this->streamCsv(
             $this->affiliateExportFilename($affiliate, 'conversions'),
             [
                 'Date', 'Order ID', 'Campaign', 'Source', 'Product', 'Commission Type', 'Order Value', 'Currency',
                 'Rate Decimal', 'Rate %', 'Commission', 'Status', 'Eligible Payout At', 'Payout ID',
             ],
-            function ($handle) use ($query) {
-                $query->orderBy('id')->chunkById(500, function ($rows) use ($handle) {
+            function ($handle) use ($query, $singleCampaignFallback) {
+                $query->orderBy('id')->chunkById(500, function ($rows) use ($handle, $singleCampaignFallback) {
                     foreach ($rows as $commission) {
+                        $campaign = $commission->campaign ?: $singleCampaignFallback;
+                        $campaignName = $campaign?->name ?: 'Legacy / unattributed';
+                        $campaignSource = $campaign?->source;
+
                         fputcsv($handle, array_map([$this, 'csvCell'], [
                             $commission->created_at?->format('Y-m-d H:i:s'),
                             $commission->getRawOriginal('order_id'),
-                            $commission->campaign?->name,
-                            $commission->campaign?->source,
+                            $campaignName,
+                            $campaignSource,
                             $commission->product,
                             $commission->type,
                             $commission->order_amount !== null ? number_format((float) $commission->order_amount, 2, '.', '') : null,

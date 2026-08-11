@@ -40,7 +40,9 @@ class AffiliateEventController extends Controller
         ]);
 
         $type = (bool) $data['is_recurring'] ? 'recurring' : 'initial';
-        $affiliateId = $this->resolveAffiliateId($data);
+        $attribution = $this->resolveAttribution($data);
+        $affiliateId = $attribution['affiliate_id'] ?? null;
+        $campaignId = $attribution['campaign_id'] ?? null;
 
         if (! $affiliateId) {
             Log::info('[AffiliateEvent] No affiliate found for order', [
@@ -113,6 +115,11 @@ class AffiliateEventController extends Controller
         $existing = $existingQuery->first();
 
         if ($existing) {
+            if (! $existing->campaign_id && $campaignId) {
+                $existing->campaign_id = $campaignId;
+                $existing->save();
+            }
+
             Log::info('[AffiliateEvent] Duplicate commission ignored', [
                 'order_id' => $data['order_id'],
                 'affiliate_id' => $affiliateId,
@@ -136,6 +143,7 @@ class AffiliateEventController extends Controller
 
         $commission = AffiliateCommission::create([
             'affiliate_id' => $affiliateId,
+            'campaign_id' => $campaignId,
             'order_id' => $data['order_id'],
             'subscription_id' => $data['subscription_id'] ?? null,
             'product' => $product,
@@ -154,6 +162,7 @@ class AffiliateEventController extends Controller
         Log::info('[AffiliateEvent] Commission created', [
             'commission_id' => $commission->id,
             'affiliate_id' => $affiliateId,
+            'campaign_id' => $campaignId,
             'order_id' => $data['order_id'],
             'product' => $product,
             'type' => $type,
@@ -177,13 +186,13 @@ class AffiliateEventController extends Controller
     }
 
     /**
-     * Resolve affiliate_id from incoming event data.
+     * Resolve the affiliate and campaign from the attribution token.
      *
      * Priority:
      *  1) install_token (apps)
      *  2) session_token (web)
      */
-    protected function resolveAffiliateId(array $data): ?int
+    protected function resolveAttribution(array $data): array
     {
         if (! empty($data['install_token'])) {
             $install = AffiliateInstallToken::where('install_token', $data['install_token'])
@@ -191,7 +200,10 @@ class AffiliateEventController extends Controller
                 ->first();
 
             if ($install && $install->affiliate_id) {
-                return (int) $install->affiliate_id;
+                return [
+                    'affiliate_id' => (int) $install->affiliate_id,
+                    'campaign_id' => $install->campaign_id ? (int) $install->campaign_id : null,
+                ];
             }
         }
 
@@ -201,10 +213,16 @@ class AffiliateEventController extends Controller
                 ->first();
 
             if ($session && $session->affiliate_id) {
-                return (int) $session->affiliate_id;
+                return [
+                    'affiliate_id' => (int) $session->affiliate_id,
+                    'campaign_id' => $session->campaign_id ? (int) $session->campaign_id : null,
+                ];
             }
         }
 
-        return null;
+        return [
+            'affiliate_id' => null,
+            'campaign_id' => null,
+        ];
     }
 }

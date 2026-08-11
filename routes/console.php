@@ -11,9 +11,9 @@ Artisan::command('inspire', function () {
 
 Artisan::command('affiliate:verify-esim-commission-repair', function () {
     $expectedRates = [
-        'KX9WTTWW' => 10.00,
+        'KX9WTTWW' => 15.00,
         'FINDYOURESIM' => 40.00,
-        'QFJCHZ01' => 10.00,
+        'QFJCHZ01' => 15.00,
         'Y3THQKSL' => 15.00,
         'ESIMCN' => 20.00,
         'MYBESTESIM' => 20.00,
@@ -132,3 +132,106 @@ Artisan::command('affiliate:verify-esim-commission-repair', function () {
     $this->info("eSIM commission repair is consistent. {$corrected} historical commission(s) were corrected.");
     return 0;
 })->purpose('Verify the verified eSIM affiliate rates, campaigns, and eligible historical commissions');
+
+
+Artisan::command('affiliate:repair-campaign-attribution {--dry-run} {--force}', function () {
+    $dryRun = (bool) $this->option('dry-run');
+    $force = (bool) $this->option('force');
+
+    $missingBefore = DB::table('affiliate_commissions')->whereNull('campaign_id')->count();
+
+    $subscriptionCandidates = DB::table('affiliate_commissions as c')
+        ->joinSub(
+            DB::table('affiliate_commissions')
+                ->selectRaw('affiliate_id, subscription_id, MIN(campaign_id) as campaign_id')
+                ->whereNotNull('subscription_id')
+                ->where('subscription_id', '<>', '')
+                ->whereNotNull('campaign_id')
+                ->groupBy('affiliate_id', 'subscription_id')
+                ->havingRaw('COUNT(DISTINCT campaign_id) = 1'),
+            'known',
+            function ($join) {
+                $join->on('known.affiliate_id', '=', 'c.affiliate_id')
+                    ->on('known.subscription_id', '=', 'c.subscription_id');
+            }
+        )
+        ->whereNull('c.campaign_id')
+        ->count();
+
+    $singleCampaignCandidates = DB::table('affiliate_commissions as c')
+        ->joinSub(
+            DB::table('affiliate_campaigns')
+                ->selectRaw('affiliate_id, MIN(id) as campaign_id')
+                ->groupBy('affiliate_id')
+                ->havingRaw('COUNT(*) = 1'),
+            'only_campaign',
+            'only_campaign.affiliate_id',
+            '=',
+            'c.affiliate_id'
+        )
+        ->whereNull('c.campaign_id')
+        ->count();
+
+    $this->table(
+        ['Metric', 'Count'],
+        [
+            ['Commissions without campaign', $missingBefore],
+            ['Deterministic from subscription', $subscriptionCandidates],
+            ['Affiliate has exactly one campaign', $singleCampaignCandidates],
+        ]
+    );
+
+    if ($dryRun || ! $force) {
+        $this->info('Dry run complete. No campaign attribution was changed.');
+        if (! $dryRun && ! $force) {
+            $this->comment('Run with --force to apply deterministic attribution.');
+        }
+        return 0;
+    }
+
+    $fromSubscription = DB::affectingStatement(<<<'SQL'
+        UPDATE affiliate_commissions c
+        INNER JOIN (
+            SELECT affiliate_id, subscription_id, MIN(campaign_id) AS campaign_id
+            FROM affiliate_commissions
+            WHERE subscription_id IS NOT NULL
+              AND subscription_id <> ''
+              AND campaign_id IS NOT NULL
+            GROUP BY affiliate_id, subscription_id
+            HAVING COUNT(DISTINCT campaign_id) = 1
+        ) known
+          ON known.affiliate_id = c.affiliate_id
+         AND known.subscription_id = c.subscription_id
+        SET c.campaign_id = known.campaign_id,
+            c.updated_at = NOW()
+        WHERE c.campaign_id IS NULL
+    SQL);
+
+    $fromSingleCampaign = DB::affectingStatement(<<<'SQL'
+        UPDATE affiliate_commissions c
+        INNER JOIN (
+            SELECT affiliate_id, MIN(id) AS campaign_id
+            FROM affiliate_campaigns
+            GROUP BY affiliate_id
+            HAVING COUNT(*) = 1
+        ) only_campaign
+          ON only_campaign.affiliate_id = c.affiliate_id
+        SET c.campaign_id = only_campaign.campaign_id,
+            c.updated_at = NOW()
+        WHERE c.campaign_id IS NULL
+    SQL);
+
+    $remaining = DB::table('affiliate_commissions')->whereNull('campaign_id')->count();
+
+    $this->table(
+        ['Result', 'Count'],
+        [
+            ['Attributed from subscription', $fromSubscription],
+            ['Attributed from single campaign', $fromSingleCampaign],
+            ['Still legacy / unattributed', $remaining],
+        ]
+    );
+
+    $this->info('Campaign attribution repair complete. Ambiguous historical rows were intentionally left unattributed.');
+    return 0;
+})->purpose('Backfill commission campaign IDs only when attribution is deterministic');
