@@ -11,7 +11,7 @@
         <div>
             <p class="stellar-eyebrow">Earnings</p>
             <h1 class="stellar-page-title">Conversions</h1>
-            <p class="stellar-page-copy">View every conversion, Order ID, commission and status.</p>
+            <p class="stellar-page-copy">View every conversion, order value, commission and status.</p>
         </div>
     </section>
 
@@ -121,7 +121,7 @@
             <div class="stellar-section-head">
                 <div>
                     <h2 class="stellar-section-title">Conversion ledger</h2>
-                    <p class="stellar-section-copy">Every conversion with its order, rate and payout status.</p>
+                    <p class="stellar-section-copy">Every conversion with its order value, rate, commission and payout status.</p>
                 </div>
             </div>
 
@@ -154,6 +154,7 @@
                             <th>Order ID</th>
                             <th>Product</th>
                             <th>Type</th>
+                            <th>Order value</th>
                             <th>Rate</th>
                             <th>Commission</th>
                             <th>Status</th>
@@ -188,6 +189,13 @@
                                 </td>
                                 <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($sale->product) }}</td>
                                 <td>{{ $sale->type === 'initial' ? 'First payment' : ($sale->type === 'recurring' ? 'Recurring' : '—') }}</td>
+                                <td class="strong">
+                                    @if($sale->order_amount !== null)
+                                        {{ $sale->currency ?: 'EUR' }} {{ number_format((float) $sale->order_amount, 2, '.', ',') }}
+                                    @else
+                                        —
+                                    @endif
+                                </td>
                                 <td>{{ rtrim(rtrim(number_format($rate * 100, 2), '0'), '.') }}%</td>
                                 <td class="strong">{{ $sale->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($sale->amount) }}</td>
                                 <td><span class="stellar-badge {{ $statusClass }}">{{ $statusLabel }}</span></td>
