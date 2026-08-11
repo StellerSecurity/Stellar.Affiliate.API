@@ -30,7 +30,7 @@
 
         @if(!$needsSetup && $campaigns->total() > 0)
             <div class="stellar-actions">
-                <a href="{{ route('affiliate.campaigns.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary" data-download>Export CSV</a>
+                <a href="{{ route('affiliate.campaigns.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary" data-export-range data-export-label="Campaign performance">Export CSV</a>
             </div>
         @endif
     </section>
@@ -240,7 +240,7 @@
                     <p class="stellar-section-copy">{{ $campaigns->total() }} campaign{{ $campaigns->total() === 1 ? '' : 's' }} found.</p>
                 </div>
                 @if($campaigns->total() > 0)
-                    <a href="{{ route('affiliate.campaigns.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Export current view</a>
+                    <a href="{{ route('affiliate.campaigns.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Campaign performance">Export current view</a>
                 @endif
             </div>
 

@@ -78,6 +78,44 @@
     </footer>
 </div>
 
+<dialog class="stellar-export-dialog" data-export-dialog aria-labelledby="stellar-export-title">
+    <form method="dialog" class="stellar-export-panel" data-export-form>
+        <div class="stellar-export-head">
+            <div>
+                <p class="stellar-eyebrow">Export report</p>
+                <h2 id="stellar-export-title" class="stellar-section-title" data-export-title>Choose a date range</h2>
+                <p class="stellar-section-copy" data-export-copy>Leave both fields empty to export all time.</p>
+            </div>
+            <button type="button" class="stellar-icon-button" data-export-close data-no-loading aria-label="Close export dialog">×</button>
+        </div>
+
+        <div class="stellar-export-presets" aria-label="Quick date ranges">
+            <button type="button" class="stellar-chip" data-export-preset="7" data-no-loading>Last 7 days</button>
+            <button type="button" class="stellar-chip" data-export-preset="30" data-no-loading>Last 30 days</button>
+            <button type="button" class="stellar-chip" data-export-preset="90" data-no-loading>Last 90 days</button>
+            <button type="button" class="stellar-chip" data-export-preset="all" data-no-loading>All time</button>
+        </div>
+
+        <div class="stellar-export-grid">
+            <div class="stellar-field">
+                <label for="stellar-export-from" class="stellar-label">From</label>
+                <input id="stellar-export-from" type="datetime-local" class="stellar-input" data-export-from>
+            </div>
+            <div class="stellar-field">
+                <label for="stellar-export-to" class="stellar-label">To</label>
+                <input id="stellar-export-to" type="datetime-local" class="stellar-input" data-export-to>
+            </div>
+        </div>
+
+        <p class="stellar-export-note" data-export-note></p>
+
+        <div class="stellar-actions stellar-export-actions">
+            <button type="button" class="stellar-btn stellar-btn-secondary" data-export-close data-no-loading>Cancel</button>
+            <button type="submit" class="stellar-btn stellar-btn-primary">Export CSV</button>
+        </div>
+    </form>
+</dialog>
+
 <div class="stellar-scrim" data-portal-scrim aria-hidden="true"></div>
 @stack('scripts')
 </body>

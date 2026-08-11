@@ -109,7 +109,7 @@
                 </div>
                 <div class="stellar-actions">
                     <a href="{{ route('affiliate.campaigns.index') }}" class="stellar-btn stellar-btn-primary stellar-btn-small">Create campaign</a>
-                    <a href="{{ route('affiliate.sales.export') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Export conversions</a>
+                    <a href="{{ route('affiliate.sales.export') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Conversions">Export conversions</a>
                     <a href="{{ route('affiliate.analytics') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">Open analytics</a>
                     <a href="mailto:{{ config('affiliate.support_email', 'info@stellarsecurity.com') }}" class="stellar-btn stellar-btn-secondary stellar-btn-small">Support</a>
                 </div>

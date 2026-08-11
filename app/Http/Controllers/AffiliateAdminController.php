@@ -30,6 +30,34 @@ class AffiliateAdminController extends Controller
         ];
     }
 
+    private function exportDateRange(Request $request): array
+    {
+        $fromInput = trim((string) $request->query('from'));
+        $toInput = trim((string) $request->query('to'));
+        $from = null;
+        $to = null;
+
+        if ($fromInput !== '') {
+            try { $from = Carbon::parse($fromInput); } catch (\Throwable) { $fromInput = ''; }
+        }
+        if ($toInput !== '') {
+            try { $to = Carbon::parse($toInput); } catch (\Throwable) { $toInput = ''; }
+        }
+        if ($from && $to && $to->lt($from)) {
+            [$from, $to] = [$to, $from];
+            [$fromInput, $toInput] = [$toInput, $fromInput];
+        }
+
+        return [$from, $to, $fromInput, $toInput];
+    }
+
+    private function applyCreatedAtRange($query, ?Carbon $from, ?Carbon $to)
+    {
+        if ($from) { $query->where('created_at', '>=', $from); }
+        if ($to) { $query->where('created_at', '<=', $to); }
+        return $query;
+    }
+
     private function csvCell(mixed $value): string
     {
         if ($value === null) {
@@ -462,12 +490,23 @@ class AffiliateAdminController extends Controller
     public function affiliateCampaignsExport(Request $request, Affiliate $affiliate)
     {
         $validCommissionStatuses = ['pending', 'approved', 'paid_out'];
+        [$from, $to] = $this->exportDateRange($request);
+
+        $range = function ($q) use ($from, $to) {
+            $this->applyCreatedAtRange($q, $from, $to);
+        };
+        $commissionRange = function ($q) use ($validCommissionStatuses, $from, $to) {
+            $q->whereIn('status', $validCommissionStatuses);
+            $this->applyCreatedAtRange($q, $from, $to);
+        };
+
         $query = AffiliateCampaign::query()
             ->where('affiliate_id', (int) $affiliate->id)
-            ->withCount(['clicks', 'sessions'])
-            ->withCount(['commissions as conversions_count' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)])
-            ->withSum(['commissions as commission_total' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)], 'amount')
-            ->withSum(['commissions as order_value_total' => fn ($q) => $q->whereIn('status', $validCommissionStatuses)], 'order_amount');
+            ->withCount(['clicks' => $range])
+            ->withCount(['sessions' => $range])
+            ->withCount(['commissions as conversions_count' => $commissionRange])
+            ->withSum(['commissions as commission_total' => $commissionRange], 'amount')
+            ->withSum(['commissions as order_value_total' => $commissionRange], 'order_amount');
 
         return $this->streamCsv(
             $this->affiliateExportFilename($affiliate, 'campaigns'),

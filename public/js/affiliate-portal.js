@@ -31,6 +31,138 @@
     });
 
     const loadingSelector = 'button, a.stellar-btn';
+    const exportDialog = document.querySelector('[data-export-dialog]');
+    const exportForm = exportDialog?.querySelector('[data-export-form]');
+    const exportTitle = exportDialog?.querySelector('[data-export-title]');
+    const exportCopy = exportDialog?.querySelector('[data-export-copy]');
+    const exportNote = exportDialog?.querySelector('[data-export-note]');
+    const exportFrom = exportDialog?.querySelector('[data-export-from]');
+    const exportTo = exportDialog?.querySelector('[data-export-to]');
+    let exportUrl = null;
+
+    const localDateTimeValue = (date) => {
+        const pad = (value) => String(value).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+
+    const openExportDialog = (control) => {
+        if (!(exportDialog instanceof HTMLDialogElement) || !control) {
+            return false;
+        }
+
+        const href = control.getAttribute('href');
+        if (!href) {
+            return false;
+        }
+
+        exportUrl = new URL(href, window.location.origin);
+        const label = control.getAttribute('data-export-label') || 'Report';
+        if (exportTitle) {
+            exportTitle.textContent = `Export ${label}`;
+        }
+        if (exportCopy) {
+            exportCopy.textContent = 'Choose the exact period you want in the CSV. Leave both fields empty for all time.';
+        }
+        if (exportNote) {
+            exportNote.textContent = label === 'Campaign performance'
+                ? 'For campaign reports, the period applies to clicks, sessions, conversions, order value and commission. Campaigns themselves are not deleted from the report just because they were created earlier.'
+                : '';
+        }
+        const existingFrom = exportUrl.searchParams.get('from') || '';
+        const existingTo = exportUrl.searchParams.get('to') || '';
+        const existingRange = exportUrl.searchParams.get('range') || '';
+
+        if (exportFrom instanceof HTMLInputElement) {
+            exportFrom.value = existingFrom;
+        }
+        if (exportTo instanceof HTMLInputElement) {
+            exportTo.value = existingTo;
+        }
+
+        if (!existingFrom && !existingTo && ['7', '30', '90'].includes(existingRange)
+            && exportFrom instanceof HTMLInputElement && exportTo instanceof HTMLInputElement) {
+            const days = Number(existingRange);
+            const to = new Date();
+            const from = new Date(to);
+            from.setDate(from.getDate() - (days - 1));
+            from.setHours(0, 0, 0, 0);
+            exportFrom.value = localDateTimeValue(from);
+            exportTo.value = localDateTimeValue(to);
+        }
+
+        exportDialog.showModal();
+        window.setTimeout(() => exportFrom?.focus(), 40);
+        return true;
+    };
+
+    exportDialog?.querySelectorAll('[data-export-close]').forEach((button) => {
+        button.addEventListener('click', () => exportDialog.close());
+    });
+
+    exportDialog?.querySelectorAll('[data-export-preset]').forEach((button) => {
+        button.addEventListener('click', () => {
+            if (!(exportFrom instanceof HTMLInputElement) || !(exportTo instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const preset = button.getAttribute('data-export-preset');
+            if (preset === 'all') {
+                exportFrom.value = '';
+                exportTo.value = '';
+                return;
+            }
+
+            const days = Number(preset);
+            if (!Number.isFinite(days) || days <= 0) {
+                return;
+            }
+
+            const to = new Date();
+            const from = new Date(to);
+            from.setDate(from.getDate() - (days - 1));
+            from.setHours(0, 0, 0, 0);
+            exportFrom.value = localDateTimeValue(from);
+            exportTo.value = localDateTimeValue(to);
+        });
+    });
+
+    exportForm?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!exportUrl) {
+            return;
+        }
+
+        const submitter = event.submitter;
+        if (submitter instanceof HTMLElement) {
+            setLoading(submitter);
+        }
+
+        const fromValue = exportFrom instanceof HTMLInputElement ? exportFrom.value.trim() : '';
+        const toValue = exportTo instanceof HTMLInputElement ? exportTo.value.trim() : '';
+
+        if (fromValue && toValue && new Date(toValue).getTime() < new Date(fromValue).getTime()) {
+            if (exportNote) {
+                exportNote.textContent = 'The To date must be after the From date.';
+            }
+            if (submitter instanceof HTMLElement) {
+                restoreControl(submitter);
+            }
+            return;
+        }
+
+        exportUrl.searchParams.delete('range');
+        if (fromValue) { exportUrl.searchParams.set('from', fromValue); } else { exportUrl.searchParams.delete('from'); }
+        if (toValue) { exportUrl.searchParams.set('to', toValue); } else { exportUrl.searchParams.delete('to'); }
+
+        const downloadUrl = exportUrl.toString();
+        exportDialog.close();
+        window.location.assign(downloadUrl);
+        window.setTimeout(() => {
+            if (submitter instanceof HTMLElement) {
+                restoreControl(submitter);
+            }
+        }, 1400);
+    });
 
     const setLoading = (control) => {
         if (!control || control.dataset.stellarLoading === 'true') {
@@ -115,6 +247,16 @@
     document.addEventListener('click', async (event) => {
         const control = event.target.closest(loadingSelector);
         if (!control) {
+            return;
+        }
+
+        if (control.matches('[data-no-loading]')) {
+            return;
+        }
+
+        if (control.matches('[data-export-range]')) {
+            event.preventDefault();
+            openExportDialog(control);
             return;
         }
 

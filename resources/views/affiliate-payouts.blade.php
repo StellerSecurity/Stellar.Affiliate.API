@@ -14,7 +14,7 @@
             <p class="stellar-page-copy">See what is pending, ready for payout and already paid.</p>
         </div>
         @if(!($needsAffiliateSetup ?? false))
-            <a href="{{ route('affiliate.payouts.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary" data-download>Export CSV</a>
+            <a href="{{ route('affiliate.payouts.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary" data-export-range data-export-label="Payouts">Export CSV</a>
         @endif
     </section>
 
@@ -72,7 +72,7 @@
                     <h2 class="stellar-section-title">Payout history</h2>
                     <p class="stellar-section-copy">Filter transfers by status or date, then export the same view.</p>
                 </div>
-                <a href="{{ route('affiliate.payouts.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Export current view</a>
+                <a href="{{ route('affiliate.payouts.export', request()->except('page')) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Payouts">Export current view</a>
             </div>
 
             <form method="GET" class="stellar-filterbar stellar-filterbar-wide">

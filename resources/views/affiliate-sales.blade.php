@@ -16,7 +16,7 @@
         </div>
         @if(!($needsAffiliateSetup ?? false))
             <div class="stellar-actions">
-                <a href="{{ route('affiliate.sales.export', $exportQuery) }}" class="stellar-btn stellar-btn-secondary" data-download>Export CSV</a>
+                <a href="{{ route('affiliate.sales.export', $exportQuery) }}" class="stellar-btn stellar-btn-secondary" data-export-range data-export-label="Conversions">Export CSV</a>
             </div>
         @endif
     </section>
@@ -134,7 +134,7 @@
                     <h2 class="stellar-section-title">Conversion ledger</h2>
                     <p class="stellar-section-copy">{{ number_format($matchingCount) }} matching conversion{{ $matchingCount === 1 ? '' : 's' }}.</p>
                 </div>
-                <a href="{{ route('affiliate.sales.export', $exportQuery) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Export current view</a>
+                <a href="{{ route('affiliate.sales.export', $exportQuery) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Conversions">Export current view</a>
             </div>
 
             @if($sales->isEmpty())

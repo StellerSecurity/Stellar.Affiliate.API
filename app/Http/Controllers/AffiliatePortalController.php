@@ -184,6 +184,49 @@ class AffiliatePortalController extends Controller
         return $query;
     }
 
+    private function exportDateRange(Request $request): array
+    {
+        $fromInput = trim((string) $request->query('from'));
+        $toInput = trim((string) $request->query('to'));
+        $from = null;
+        $to = null;
+
+        if ($fromInput !== '') {
+            try {
+                $from = Carbon::parse($fromInput);
+            } catch (\Throwable) {
+                $fromInput = '';
+            }
+        }
+
+        if ($toInput !== '') {
+            try {
+                $to = Carbon::parse($toInput);
+            } catch (\Throwable) {
+                $toInput = '';
+            }
+        }
+
+        if ($from && $to && $to->lt($from)) {
+            [$from, $to] = [$to, $from];
+            [$fromInput, $toInput] = [$toInput, $fromInput];
+        }
+
+        return [$from, $to, $fromInput, $toInput];
+    }
+
+    private function applyCreatedAtRange($query, ?Carbon $from, ?Carbon $to)
+    {
+        if ($from) {
+            $query->where('created_at', '>=', $from);
+        }
+        if ($to) {
+            $query->where('created_at', '<=', $to);
+        }
+
+        return $query;
+    }
+
     private function csvCell(mixed $value): string
     {
         if ($value === null) {
@@ -602,14 +645,23 @@ class AffiliatePortalController extends Controller
         $product = trim((string) $request->query('product'));
         $source = trim((string) $request->query('source'));
         $validStatuses = ['pending', 'approved', 'paid_out'];
+        [$from, $to] = $this->exportDateRange($request);
+
+        $range = function ($q) use ($from, $to) {
+            $this->applyCreatedAtRange($q, $from, $to);
+        };
+        $commissionRange = function ($q) use ($validStatuses, $from, $to) {
+            $q->whereIn('status', $validStatuses);
+            $this->applyCreatedAtRange($q, $from, $to);
+        };
 
         $query = AffiliateCampaign::query()
             ->where('affiliate_id', (int) $affiliate->id)
-            ->withCount('clicks')
-            ->withCount('sessions')
-            ->withCount(['commissions as conversions_count' => fn ($q) => $q->whereIn('status', $validStatuses)])
-            ->withSum(['commissions as commission_total' => fn ($q) => $q->whereIn('status', $validStatuses)], 'amount')
-            ->withSum(['commissions as order_value_total' => fn ($q) => $q->whereIn('status', $validStatuses)], 'order_amount');
+            ->withCount(['clicks' => $range])
+            ->withCount(['sessions' => $range])
+            ->withCount(['commissions as conversions_count' => $commissionRange])
+            ->withSum(['commissions as commission_total' => $commissionRange], 'amount')
+            ->withSum(['commissions as order_value_total' => $commissionRange], 'order_amount');
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
@@ -949,13 +1001,18 @@ class AffiliatePortalController extends Controller
             abort(404);
         }
 
-        $period = $this->analyticsPeriod($request);
+        [$explicitFrom, $explicitTo, $fromInput, $toInput] = $this->exportDateRange($request);
         $query = AffiliateClick::query()
             ->with('campaign:id,name')
             ->where('affiliate_id', (int) $affiliate->id);
 
-        if ($period['from']) {
-            $query->where('created_at', '>=', $period['from']);
+        if ($fromInput !== '' || $toInput !== '') {
+            $this->applyCreatedAtRange($query, $explicitFrom, $explicitTo);
+        } else {
+            $period = $this->analyticsPeriod($request);
+            if ($period['from']) {
+                $query->where('created_at', '>=', $period['from']);
+            }
         }
 
         $filename = 'stellar-affiliate-traffic-'.strtolower($affiliate->public_code).'-'.now()->format('Y-m-d').'.csv';

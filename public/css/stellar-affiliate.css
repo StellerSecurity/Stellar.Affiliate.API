@@ -3096,3 +3096,96 @@ summary:focus-visible {
         grid-template-columns: 1fr;
     }
 }
+
+
+/* Export date range */
+.stellar-export-dialog {
+    width: min(620px, calc(100vw - 32px));
+    border: 0;
+    padding: 0;
+    border-radius: 28px;
+    background: transparent;
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+}
+
+.stellar-export-dialog::backdrop {
+    background: rgba(15, 23, 42, 0.28);
+    backdrop-filter: blur(8px);
+}
+
+.stellar-export-panel {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 28px;
+    padding: 28px;
+}
+
+.stellar-export-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.stellar-icon-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.stellar-export-presets {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+}
+
+.stellar-chip {
+    border: 1px solid #dfe3ea;
+    background: #f8f9fb;
+    color: #23252a;
+    border-radius: 999px;
+    min-height: 38px;
+    padding: 8px 14px;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.stellar-chip:hover,
+.stellar-chip:focus-visible {
+    border-color: #2f66f6;
+    background: #f3f6ff;
+    outline: none;
+}
+
+.stellar-export-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.stellar-export-note {
+    min-height: 22px;
+    margin: 14px 0 0;
+    color: #6b6d75;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.stellar-export-actions {
+    justify-content: flex-end;
+    margin-top: 22px;
+}
+
+@media (max-width: 640px) {
+    .stellar-export-panel { padding: 22px; border-radius: 22px; }
+    .stellar-export-grid { grid-template-columns: 1fr; }
+    .stellar-export-actions { display: grid; grid-template-columns: 1fr 1fr; }
+}

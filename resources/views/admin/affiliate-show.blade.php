@@ -31,19 +31,19 @@
         <div class="stellar-export-grid">
             <article class="stellar-export-card">
                 <div><strong>Conversions</strong><span>Orders, order value, rate, commission and payout status.</span></div>
-                <a href="{{ route('affiliate.admin.affiliates.exports.conversions', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
+                <a href="{{ route('affiliate.admin.affiliates.exports.conversions', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Conversions">Download CSV</a>
             </article>
             <article class="stellar-export-card">
                 <div><strong>Campaigns</strong><span>Performance, order value, commission and tracking links.</span></div>
-                <a href="{{ route('affiliate.admin.affiliates.exports.campaigns', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
+                <a href="{{ route('affiliate.admin.affiliates.exports.campaigns', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Campaign performance">Download CSV</a>
             </article>
             <article class="stellar-export-card">
                 <div><strong>Tracking</strong><span>Clicks, campaign attribution, landing URLs and referrers.</span></div>
-                <a href="{{ route('affiliate.admin.affiliates.exports.tracking', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
+                <a href="{{ route('affiliate.admin.affiliates.exports.tracking', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Tracking activity">Download CSV</a>
             </article>
             <article class="stellar-export-card">
                 <div><strong>Payouts</strong><span>Transfer history, status, references and paid dates.</span></div>
-                <a href="{{ route('affiliate.admin.affiliates.exports.payouts', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-download>Download CSV</a>
+                <a href="{{ route('affiliate.admin.affiliates.exports.payouts', $affiliate) }}" class="stellar-btn stellar-btn-secondary stellar-btn-small" data-export-range data-export-label="Payouts">Download CSV</a>
             </article>
         </div>
     </section>

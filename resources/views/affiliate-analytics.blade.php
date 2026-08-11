@@ -16,8 +16,8 @@
         </div>
         @if(!($needsAffiliateSetup ?? false))
             <div class="stellar-actions">
-                <a href="{{ route('affiliate.analytics.traffic.export', ['range' => $currentRange]) }}" class="stellar-btn stellar-btn-secondary" data-download>Export traffic CSV</a>
-                <a href="{{ route('affiliate.sales.export', $conversionExportQuery) }}" class="stellar-btn stellar-btn-secondary" data-download>Export conversions</a>
+                <a href="{{ route('affiliate.analytics.traffic.export', ['range' => $currentRange]) }}" class="stellar-btn stellar-btn-secondary" data-export-range data-export-label="Tracking activity">Export traffic CSV</a>
+                <a href="{{ route('affiliate.sales.export', $conversionExportQuery) }}" class="stellar-btn stellar-btn-secondary" data-export-range data-export-label="Conversions">Export conversions</a>
             </div>
         @endif
     </section>
