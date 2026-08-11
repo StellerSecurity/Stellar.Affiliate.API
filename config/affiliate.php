@@ -44,9 +44,11 @@ return [
         ],
     ],
 
+    // Unknown/legacy products are treated as eSIM. Keep the safety fallback on
+    // eSIM terms so a missing product can never become a 100% commission.
     'fallback_rates' => [
-        'initial' => (float) env('AFFILIATE_INITIAL_RATE', 1.00),
-        'recurring' => (float) env('AFFILIATE_RECURRING_RATE', 0.60),
+        'initial' => 0.10,
+        'recurring' => 0.10,
     ],
 
     'resources' => [

@@ -139,39 +139,46 @@ class AppServiceProvider extends ServiceProvider
                     ? CommissionMath::money((string) $commission->order_amount)
                     : $incomingAmount;
                 $orderCurrency = strtoupper(trim((string) ($commission->currency ?: $request->input('currency', 'EUR'))));
-                $orderTotalSource = 'event_fallback';
+                $orderTotalSource = (string) $request->attributes->get('affiliate_commission_order_total_source', '');
 
-                if ($orderId !== '') {
-                    try {
-                        $commerceTotal = app(AffiliateOrderService::class)->getCommissionTotal($orderId);
-                        $commerceOrderAmount = CommissionMath::fromCents((int) $commerceTotal['grand_total_cents']);
+                // AffiliateEventController resolves the Commerce total before create.
+                // Keep this model hook as a defense-in-depth fallback for any other
+                // order-paid create path, without making a duplicate Commerce request.
+                if ($orderTotalSource === '') {
+                    $orderTotalSource = 'event_fallback';
 
-                        if ($incomingAmount !== $commerceOrderAmount) {
-                            Log::warning('[AffiliateCommission] Event amount differs from Commerce grand total', [
+                    if ($orderId !== '') {
+                        try {
+                            $commerceTotal = app(AffiliateOrderService::class)->getCommissionTotal($orderId);
+                            $commerceOrderAmount = CommissionMath::fromCents((int) $commerceTotal['grand_total_cents']);
+
+                            if ($incomingAmount !== $commerceOrderAmount) {
+                                Log::warning('[AffiliateCommission] Event amount differs from Commerce grand total', [
+                                    'order_id' => $orderId,
+                                    'affiliate_id' => $affiliateId,
+                                    'event_amount' => $incomingAmount,
+                                    'commerce_grand_total' => $commerceOrderAmount,
+                                ]);
+                            }
+
+                            $orderAmount = $commerceOrderAmount;
+                            $orderCurrency = (string) $commerceTotal['currency'];
+                            $orderTotalSource = 'commerce_grand_total';
+                        } catch (Throwable $exception) {
+                            Log::warning('[AffiliateCommission] Commerce total unavailable; event amount retained for later reconciliation', [
                                 'order_id' => $orderId,
                                 'affiliate_id' => $affiliateId,
                                 'event_amount' => $incomingAmount,
-                                'commerce_grand_total' => $commerceOrderAmount,
+                                'exception' => $exception::class,
+                                'message' => $exception->getMessage(),
                             ]);
                         }
-
-                        $orderAmount = $commerceOrderAmount;
-                        $orderCurrency = (string) $commerceTotal['currency'];
-                        $orderTotalSource = 'commerce_grand_total';
-                    } catch (Throwable $exception) {
-                        Log::warning('[AffiliateCommission] Commerce total unavailable; event amount retained for later reconciliation', [
-                            'order_id' => $orderId,
+                    } else {
+                        Log::warning('[AffiliateCommission] Order ID missing; event amount retained for later reconciliation', [
                             'affiliate_id' => $affiliateId,
                             'event_amount' => $incomingAmount,
-                            'exception' => $exception::class,
-                            'message' => $exception->getMessage(),
                         ]);
                     }
-                } else {
-                    Log::warning('[AffiliateCommission] Order ID missing; event amount retained for later reconciliation', [
-                        'affiliate_id' => $affiliateId,
-                        'event_amount' => $incomingAmount,
-                    ]);
                 }
 
                 $request->attributes->set('affiliate_commission_order_total_source', $orderTotalSource);
