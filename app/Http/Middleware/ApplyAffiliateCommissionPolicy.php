@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\AffiliateCommission;
 use App\Services\AffiliateCommissionPolicy;
+use App\Support\AffiliateRequestContext;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ class ApplyAffiliateCommissionPolicy
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->route()?->getName() !== 'affiliate.events.order_paid') {
+        if (! AffiliateRequestContext::isOrderPaid($request)) {
             return $next($request);
         }
 

@@ -9,6 +9,7 @@ use App\Models\AffiliateInstallToken;
 use App\Models\AffiliateSession;
 use App\Services\AffiliateCommissionPolicy;
 use App\Services\AffiliateOrderService;
+use App\Support\AffiliateRequestContext;
 use App\Support\CommissionMath;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -86,79 +87,114 @@ class AppServiceProvider extends ServiceProvider
         AffiliateCommission::creating(function (AffiliateCommission $commission): void {
             $request = request();
             $policy = app(AffiliateCommissionPolicy::class);
+            $affiliateId = (int) $commission->affiliate_id;
 
-            // Legacy links existed before product tagging. Missing/legacy products are eSIM.
-            $commission->product = $policy->normalizeProduct($commission->product);
+            // Commission policy is an invariant of the model, not a property of one
+            // controller or route. Every newly-created commission must resolve the
+            // effective program rate before it can be persisted.
+            $rawProduct = (string) $commission->product;
+            $isOrderPaidRequest = AffiliateRequestContext::isOrderPaid($request);
 
-            if ($request->route()?->getName() !== 'affiliate.events.order_paid') {
-                return;
+            if ($isOrderPaidRequest) {
+                $requestProduct = $request->attributes->get('affiliate_commission_product')
+                    ?: $request->input('product');
+
+                if (is_string($requestProduct) && trim($requestProduct) !== '') {
+                    $rawProduct = $requestProduct;
+                }
             }
 
-            $affiliateId = (int) $commission->affiliate_id;
+            $product = $policy->normalizeProduct($rawProduct);
+            if (! in_array($product, ['esim', 'vpn', 'antivirus'], true)) {
+                $product = 'esim';
+            }
+
+            $commission->product = $product;
+
             if ($affiliateId <= 0) {
                 return;
             }
 
             $type = $commission->type === 'recurring' ? 'recurring' : 'initial';
-            $rawProduct = (string) ($request->attributes->get('affiliate_commission_product') ?: $request->input('product', 'esim'));
-            $orderId = trim((string) $commission->getAttribute('order_id'));
-            $incomingAmount = CommissionMath::money((string) $request->input('amount', 0));
-            $orderAmount = $incomingAmount;
-            $orderCurrency = strtoupper(trim((string) ($commission->currency ?: $request->input('currency', 'EUR'))));
-            $orderTotalSource = 'event_fallback';
-
-            if ($orderId !== '') {
-                try {
-                    $commerceTotal = app(AffiliateOrderService::class)->getCommissionTotal($orderId);
-                    $commerceOrderAmount = CommissionMath::fromCents((int) $commerceTotal['grand_total_cents']);
-
-                    if ($incomingAmount !== $commerceOrderAmount) {
-                        Log::warning('[AffiliateCommission] Event amount differs from Commerce grand total', [
-                            'order_id' => $orderId,
-                            'affiliate_id' => $affiliateId,
-                            'event_amount' => $incomingAmount,
-                            'commerce_grand_total' => $commerceOrderAmount,
-                        ]);
-                    }
-
-                    $orderAmount = $commerceOrderAmount;
-                    $orderCurrency = (string) $commerceTotal['currency'];
-                    $orderTotalSource = 'commerce_grand_total';
-                } catch (Throwable $exception) {
-                    Log::warning('[AffiliateCommission] Commerce total unavailable; event amount retained for later reconciliation', [
-                        'order_id' => $orderId,
-                        'affiliate_id' => $affiliateId,
-                        'event_amount' => $incomingAmount,
-                        'exception' => $exception::class,
-                        'message' => $exception->getMessage(),
-                    ]);
-                }
-            } else {
-                Log::warning('[AffiliateCommission] Order ID missing; event amount retained for later reconciliation', [
-                    'affiliate_id' => $affiliateId,
-                    'event_amount' => $incomingAmount,
-                ]);
-            }
-
-            $request->attributes->set('affiliate_commission_order_total_source', $orderTotalSource);
-
-            $product = $policy->normalizeProduct($rawProduct);
             $resolved = $policy->effectiveRate($affiliateId, $product, $type);
             $rate = max(0, min(1, (float) $resolved['rate']));
 
-            $commission->campaign_id = $this->resolveCampaignIdForCommission($commission, $affiliateId);
-            $commission->product = $product;
-            $commission->order_amount = $orderAmount;
-            $commission->rate = $rate;
+            // Never trust the legacy controller/env rate on a new commission.
+            $commission->rate = number_format($rate, 4, '.', '');
             $commission->rate_source = (string) $resolved['source'];
-            if ($orderCurrency !== '') {
-                $commission->currency = $orderCurrency;
+
+            // The legacy API controller always carries the paid order amount in the
+            // request. Capture it even if route metadata is unavailable so a new
+            // commission cannot be persisted without its calculation base.
+            if ($commission->order_amount === null
+                && $request->has('amount')
+                && is_numeric($request->input('amount'))) {
+                $commission->order_amount = CommissionMath::money((string) $request->input('amount'));
             }
-            $commission->amount = CommissionMath::calculate($orderAmount, $rate);
+
+            if ($isOrderPaidRequest) {
+                $orderId = trim((string) $commission->getAttribute('order_id'));
+                $incomingAmount = CommissionMath::money((string) $request->input('amount', 0));
+                $orderAmount = $commission->order_amount !== null
+                    ? CommissionMath::money((string) $commission->order_amount)
+                    : $incomingAmount;
+                $orderCurrency = strtoupper(trim((string) ($commission->currency ?: $request->input('currency', 'EUR'))));
+                $orderTotalSource = 'event_fallback';
+
+                if ($orderId !== '') {
+                    try {
+                        $commerceTotal = app(AffiliateOrderService::class)->getCommissionTotal($orderId);
+                        $commerceOrderAmount = CommissionMath::fromCents((int) $commerceTotal['grand_total_cents']);
+
+                        if ($incomingAmount !== $commerceOrderAmount) {
+                            Log::warning('[AffiliateCommission] Event amount differs from Commerce grand total', [
+                                'order_id' => $orderId,
+                                'affiliate_id' => $affiliateId,
+                                'event_amount' => $incomingAmount,
+                                'commerce_grand_total' => $commerceOrderAmount,
+                            ]);
+                        }
+
+                        $orderAmount = $commerceOrderAmount;
+                        $orderCurrency = (string) $commerceTotal['currency'];
+                        $orderTotalSource = 'commerce_grand_total';
+                    } catch (Throwable $exception) {
+                        Log::warning('[AffiliateCommission] Commerce total unavailable; event amount retained for later reconciliation', [
+                            'order_id' => $orderId,
+                            'affiliate_id' => $affiliateId,
+                            'event_amount' => $incomingAmount,
+                            'exception' => $exception::class,
+                            'message' => $exception->getMessage(),
+                        ]);
+                    }
+                } else {
+                    Log::warning('[AffiliateCommission] Order ID missing; event amount retained for later reconciliation', [
+                        'affiliate_id' => $affiliateId,
+                        'event_amount' => $incomingAmount,
+                    ]);
+                }
+
+                $request->attributes->set('affiliate_commission_order_total_source', $orderTotalSource);
+                $commission->campaign_id = $this->resolveCampaignIdForCommission($commission, $affiliateId);
+                $commission->order_amount = $orderAmount;
+
+                if ($orderCurrency !== '') {
+                    $commission->currency = $orderCurrency;
+                }
+            }
+
+            // If a base amount exists, the amount must always be derived from the
+            // effective rate at exact six-decimal precision.
+            if ($commission->order_amount !== null) {
+                $commission->amount = CommissionMath::calculate(
+                    (string) $commission->order_amount,
+                    (string) $commission->rate
+                );
+            }
         });
 
         AffiliateCommission::created(function (AffiliateCommission $commission): void {
-            if (request()->route()?->getName() !== 'affiliate.events.order_paid') {
+            if (! AffiliateRequestContext::isOrderPaid(request())) {
                 return;
             }
 
