@@ -17,7 +17,7 @@ class ApplyAffiliateCommissionPolicy
             return $next($request);
         }
 
-        $product = app(AffiliateCommissionPolicy::class)->normalizeProduct((string) $request->input('product', 'unknown'));
+        $product = app(AffiliateCommissionPolicy::class)->normalizeProduct((string) $request->input('product', 'esim'));
         $request->attributes->set('affiliate_commission_product', $product);
 
         $response = $next($request);

@@ -264,7 +264,7 @@
                                         <span class="stellar-code">—</span>
                                     @endif
                                 </td>
-                                <td>{{ $sale->product ? config('affiliate.products.'.$sale->product.'.label', ucfirst($sale->product)) : 'Unassigned' }}</td>
+                                <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($sale->product) }}</td>
                                 <td>{{ $sale->type === 'initial' ? 'First payment' : ($sale->type === 'recurring' ? 'Recurring' : '—') }}</td>
                                 <td class="strong">{{ $sale->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($sale->amount) }}</td>
                                 <td><span class="stellar-badge {{ $statusClass }}">{{ $statusLabel }}</span></td>

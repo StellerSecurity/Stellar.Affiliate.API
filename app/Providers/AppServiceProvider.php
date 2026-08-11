@@ -85,6 +85,10 @@ class AppServiceProvider extends ServiceProvider
 
         AffiliateCommission::creating(function (AffiliateCommission $commission): void {
             $request = request();
+            $policy = app(AffiliateCommissionPolicy::class);
+
+            // Legacy links existed before product tagging. Missing/legacy products are eSIM.
+            $commission->product = $policy->normalizeProduct($commission->product);
 
             if ($request->route()?->getName() !== 'affiliate.events.order_paid') {
                 return;
@@ -96,7 +100,7 @@ class AppServiceProvider extends ServiceProvider
             }
 
             $type = $commission->type === 'recurring' ? 'recurring' : 'initial';
-            $rawProduct = (string) ($request->attributes->get('affiliate_commission_product') ?: $request->input('product', 'unknown'));
+            $rawProduct = (string) ($request->attributes->get('affiliate_commission_product') ?: $request->input('product', 'esim'));
             $orderId = trim((string) $commission->getAttribute('order_id'));
             $incomingAmount = CommissionMath::money((string) $request->input('amount', 0));
             $orderAmount = $incomingAmount;
@@ -138,7 +142,6 @@ class AppServiceProvider extends ServiceProvider
 
             $request->attributes->set('affiliate_commission_order_total_source', $orderTotalSource);
 
-            $policy = app(AffiliateCommissionPolicy::class);
             $product = $policy->normalizeProduct($rawProduct);
             $resolved = $policy->effectiveRate($affiliateId, $product, $type);
             $rate = max(0, min(1, (float) $resolved['rate']));

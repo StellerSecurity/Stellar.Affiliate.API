@@ -46,7 +46,7 @@
             @else
                 <div class="stellar-stat-list">
                     @foreach($productPerformance as $row)
-                        <div class="stellar-stat-row"><span>{{ $row->product ? config('affiliate.products.'.$row->product.'.label', ucfirst($row->product)) : 'Unassigned' }} · {{ number_format($row->conversions_count) }} conversions</span><strong>€{{ \App\Support\CommissionMath::display($row->commission_total) }}</strong></div>
+                        <div class="stellar-stat-row"><span>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($row->product) }} · {{ number_format($row->conversions_count) }} conversions</span><strong>€{{ \App\Support\CommissionMath::display($row->commission_total) }}</strong></div>
                     @endforeach
                 </div>
             @endif
@@ -63,7 +63,7 @@
                     <tr>
                         <td>{{ $commission->created_at?->format('M j, Y · H:i') }}</td>
                         <td>@if($commission->affiliate)<a class="stellar-text-link" href="{{ route('affiliate.admin.affiliates.show', $commission->affiliate) }}">{{ $commission->affiliate->public_code }}</a>@else<span>—</span>@endif</td>
-                        <td>{{ $commission->product ? config('affiliate.products.'.$commission->product.'.label', ucfirst($commission->product)) : 'Unassigned' }}</td>
+                        <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($commission->product) }}</td>
                         <td><a class="stellar-order-link" href="{{ route('affiliate.orders.show', $commission->id) }}"><span class="stellar-code">{{ $commission->getRawOriginal('order_id') }}</span><span>View</span></a></td>
                         <td>{{ rtrim(rtrim(number_format((float) $commission->rate * 100, 2), '0'), '.') }}%</td>
                         <td class="strong">{{ $commission->currency }} {{ \App\Support\CommissionMath::display($commission->amount) }}</td>

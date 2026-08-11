@@ -190,7 +190,7 @@
                                         <span class="stellar-code">—</span>
                                     @endif
                                 </td>
-                                <td>{{ $conversion->product ? config('affiliate.products.'.$conversion->product.'.label', ucfirst($conversion->product)) : 'Unassigned' }}</td>
+                                <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($conversion->product) }}</td>
                                 <td>{{ $conversion->type === 'initial' ? 'First payment' : ($conversion->type === 'recurring' ? 'Recurring' : '—') }}</td>
                                 <td class="strong">{{ $conversion->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($conversion->amount) }}</td>
                                 <td><span class="stellar-badge {{ $statusClass }}">{{ $statusLabel }}</span></td>

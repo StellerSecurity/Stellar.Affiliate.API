@@ -157,7 +157,7 @@
                     </div>
                     <div class="stellar-order-summary-row">
                         <span>Product</span>
-                        <strong>{{ $commission->product ? config('affiliate.products.'.$commission->product.'.label', ucfirst($commission->product)) : 'Unassigned' }}</strong>
+                        <strong>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($commission->product) }}</strong>
                     </div>
                     <div class="stellar-order-summary-row">
                         <span>Commission type</span>

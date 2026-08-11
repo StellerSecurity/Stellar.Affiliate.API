@@ -59,7 +59,7 @@
                             @endif
                         </td>
                         <td>{{ $campaign->source ?: 'other' }}</td>
-                        <td>{{ match($campaign->product) { 'esim' => 'Stellar eSIM', 'vpn' => 'Stellar VPN', 'antivirus' => 'Stellar Antivirus', default => $campaign->product ? ucfirst($campaign->product) : '—' } }}</td>
+                        <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($campaign->product) }}</td>
                         <td class="strong">
                             @if($campaign->product === 'esim' && $campaign->commission_rate !== null)
                                 {{ number_format((float) $campaign->commission_rate * 100, 2) }}%

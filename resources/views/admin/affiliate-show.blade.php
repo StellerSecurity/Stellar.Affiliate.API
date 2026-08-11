@@ -108,7 +108,7 @@
                     <tr>
                         <td>{{ $commission->created_at?->format('M j, Y · H:i') }}</td>
                         <td><a class="stellar-order-link" href="{{ route('affiliate.orders.show', $commission->id) }}"><span class="stellar-code">{{ $commission->getRawOriginal('order_id') }}</span><span>View</span></a></td>
-                        <td>{{ config('affiliate.products.'.($commission->product ?: '').'.label', ucfirst($commission->product ?: 'Unassigned')) }}</td>
+                        <td>{{ app(\App\Services\AffiliateCommissionPolicy::class)->productLabel($commission->product) }}</td>
                         <td>{{ $commission->type === 'initial' ? 'First payment' : ucfirst($commission->type) }}</td>
                         <td>{{ rtrim(rtrim(number_format((float) $commission->rate * 100, 2), '0'), '.') }}%</td>
                         <td class="strong">{{ $commission->currency }} {{ \App\Support\CommissionMath::display($commission->amount) }}</td>

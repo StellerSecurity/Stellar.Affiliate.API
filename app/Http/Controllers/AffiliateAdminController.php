@@ -162,8 +162,17 @@ class AffiliateAdminController extends Controller
             ->whereIn('status', $validCommissionStatuses)
             ->where('created_at', '>=', $from)
             ->groupBy('product')
-            ->orderByDesc('conversions_count')
-            ->get();
+            ->get()
+            ->groupBy(fn ($row) => $policy->normalizeProduct($row->product))
+            ->map(function ($rows, string $product) {
+                return (object) [
+                    'product' => $product,
+                    'conversions_count' => $rows->sum('conversions_count'),
+                    'commission_total' => $rows->sum('commission_total'),
+                ];
+            })
+            ->sortByDesc('conversions_count')
+            ->values();
 
         $vpnInitialRate = (float) $policy->globalRate('vpn', 'initial')['rate'];
         $vpnRecurringRate = (float) $policy->globalRate('vpn', 'recurring')['rate'];

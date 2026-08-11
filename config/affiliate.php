@@ -5,6 +5,10 @@ return [
 
     'support_email' => env('AFFILIATE_SUPPORT_EMAIL', 'info@stellarsecurity.com'),
 
+    // Legacy tracking links predate product tagging. Those links are eSIM links.
+    'legacy_default_product' => 'esim',
+    'legacy_unassigned_products' => ['', 'legacy', 'unknown', 'unassigned', 'null', 'none', 'n/a', 'na'],
+
     'admin_emails' => array_values(array_filter(array_map(
         static fn (string $email): string => strtolower(trim($email)),
         explode(',', (string) env('AFFILIATE_ADMIN_EMAILS', ''))

@@ -11,6 +11,15 @@ class AffiliateCommissionPolicy
     public function normalizeProduct(?string $product): string
     {
         $candidate = strtolower(trim((string) $product));
+        $legacyDefault = strtolower(trim((string) config('affiliate.legacy_default_product', 'esim')));
+        $legacyUnassigned = array_map(
+            static fn ($value): string => strtolower(trim((string) $value)),
+            (array) config('affiliate.legacy_unassigned_products', ['', 'legacy', 'unknown', 'unassigned'])
+        );
+
+        if (in_array($candidate, $legacyUnassigned, true)) {
+            return $legacyDefault !== '' ? $legacyDefault : 'esim';
+        }
 
         foreach ((array) config('affiliate.products', []) as $key => $definition) {
             $aliases = array_map(
@@ -34,9 +43,14 @@ class AffiliateCommissionPolicy
         return trim($normalized, '_') ?: 'unknown';
     }
 
-    public function productLabel(string $product): string
+    public function productLabel(?string $product): string
     {
-        return (string) config("affiliate.products.{$product}.label", ucwords(str_replace('_', ' ', $product)));
+        $normalized = $this->normalizeProduct($product);
+
+        return (string) config(
+            "affiliate.products.{$normalized}.label",
+            ucwords(str_replace('_', ' ', $normalized))
+        );
     }
 
     public function effectiveRate(int $affiliateId, string $product, string $type): array
