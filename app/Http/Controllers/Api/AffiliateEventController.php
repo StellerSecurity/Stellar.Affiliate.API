@@ -11,6 +11,7 @@ use App\Services\AffiliateOrderService;
 use App\Support\CommissionMath;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -100,89 +101,186 @@ class AffiliateEventController extends Controller
         $request->attributes->set('affiliate_commission_product', $product);
         $request->attributes->set('affiliate_commission_order_total_source', $orderTotalSource);
 
-        // Idempotency prefers the external payment ID. If it is absent, fall back to
-        // the order ID so null external IDs cannot collapse unrelated conversions.
-        $existingQuery = AffiliateCommission::query()
-            ->where('affiliate_id', $affiliateId)
-            ->where('type', $type);
+        // Serialize requests that can conflict on an idempotency key. This closes
+        // the race between the duplicate lookup and the commission insert.
+        $idempotencyLocks = $this->acquireIdempotencyLocks($data, $type);
 
-        if (! empty($data['external_payment_id'])) {
-            $existingQuery->where('external_payment_id', $data['external_payment_id']);
-        } else {
-            $existingQuery->where('order_id', $data['order_id']);
-        }
+        try {
+            $existingQuery = AffiliateCommission::query();
 
-        $existing = $existingQuery->first();
+            if (! empty($data['external_payment_id'])) {
+                $existingQuery->where(function ($query) use ($data, $type): void {
+                    $query->where('external_payment_id', $data['external_payment_id']);
 
-        if ($existing) {
-            if (! $existing->campaign_id && $campaignId) {
-                $existing->campaign_id = $campaignId;
-                $existing->save();
+                    if ($type === 'initial') {
+                        $query->orWhere(function ($initialQuery) use ($data): void {
+                            $initialQuery
+                                ->where('type', 'initial')
+                                ->where('order_id', $data['order_id']);
+                        });
+                    }
+                });
+
+                $existing = $existingQuery->first();
+            } elseif ($type === 'initial') {
+                $existing = $existingQuery
+                    ->where('type', 'initial')
+                    ->where('order_id', $data['order_id'])
+                    ->first();
+            } else {
+                // Recurring events may legitimately reuse an order ID. Without an
+                // external payment ID there is therefore no safe duplicate key.
+                $existing = null;
             }
 
-            Log::info('[AffiliateEvent] Duplicate commission ignored', [
-                'order_id' => $data['order_id'],
+            if ($existing) {
+                if ((int) $existing->affiliate_id === (int) $affiliateId
+                    && ! $existing->campaign_id
+                    && $campaignId) {
+                    $existing->campaign_id = $campaignId;
+                    $existing->save();
+                }
+
+                Log::info('[AffiliateEvent] Duplicate commission ignored', [
+                    'order_id' => $data['order_id'],
+                    'affiliate_id' => $affiliateId,
+                    'type' => $type,
+                    'external_payment_id' => $data['external_payment_id'] ?? null,
+                    'commission_id' => $existing->id,
+                ]);
+
+                return response()->json([
+                    'status' => 'duplicate',
+                    'commission_id' => $existing->id,
+                    'affiliate_id' => $affiliateId,
+                    'order_id' => $data['order_id'],
+                    'type' => $type,
+                    'rate' => (float) $existing->rate,
+                    'amount' => (float) $existing->amount,
+                ]);
+            }
+
+            $refundDays = (int) env('AFFILIATE_REFUND_DAYS', 14);
+
+            $commission = AffiliateCommission::create([
                 'affiliate_id' => $affiliateId,
+                'campaign_id' => $campaignId,
+                'order_id' => $data['order_id'],
+                'subscription_id' => $data['subscription_id'] ?? null,
+                'product' => $product,
+                'order_amount' => $orderAmount,
                 'type' => $type,
+                'rate' => $rate,
+                'rate_source' => (string) $resolvedRate['source'],
+                'amount' => $commissionAmount,
+                'currency' => $currency,
+                'status' => 'pending',
+                'payout_id' => null,
+                'eligible_payout_at' => now()->addDays($refundDays),
                 'external_payment_id' => $data['external_payment_id'] ?? null,
-                'commission_id' => $existing->id,
+            ]);
+
+            Log::info('[AffiliateEvent] Commission created', [
+                'commission_id' => $commission->id,
+                'affiliate_id' => $affiliateId,
+                'campaign_id' => $campaignId,
+                'order_id' => $data['order_id'],
+                'product' => $product,
+                'type' => $type,
+                'order_amount' => (string) $commission->order_amount,
+                'rate' => (string) $commission->rate,
+                'amount' => (string) $commission->amount,
+                'rate_source' => $commission->rate_source,
+                'order_total_source' => $orderTotalSource,
             ]);
 
             return response()->json([
-                'status' => 'duplicate',
-                'commission_id' => $existing->id,
+                'status' => 'ok',
+                'commission_id' => $commission->id,
                 'affiliate_id' => $affiliateId,
                 'order_id' => $data['order_id'],
                 'type' => $type,
-                'rate' => (float) $existing->rate,
-                'amount' => (float) $existing->amount,
+                'rate' => (float) $commission->rate,
+                'amount' => (float) $commission->amount,
+                'eligible_after' => $commission->eligible_payout_at,
             ]);
+        } finally {
+            $this->releaseIdempotencyLocks($idempotencyLocks);
+        }
+    }
+
+    /**
+     * Acquire database-scoped locks for keys that must not be processed concurrently.
+     *
+     * External payment IDs are always unique for commission processing. Initial order
+     * IDs are unique as well, while recurring events intentionally do not lock by order ID.
+     *
+     * @return array<int, string>
+     */
+    protected function acquireIdempotencyLocks(array $data, string $type): array
+    {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return [];
         }
 
-        $refundDays = (int) env('AFFILIATE_REFUND_DAYS', 14);
+        $keys = [];
 
-        $commission = AffiliateCommission::create([
-            'affiliate_id' => $affiliateId,
-            'campaign_id' => $campaignId,
-            'order_id' => $data['order_id'],
-            'subscription_id' => $data['subscription_id'] ?? null,
-            'product' => $product,
-            'order_amount' => $orderAmount,
-            'type' => $type,
-            'rate' => $rate,
-            'rate_source' => (string) $resolvedRate['source'],
-            'amount' => $commissionAmount,
-            'currency' => $currency,
-            'status' => 'pending',
-            'payout_id' => null,
-            'eligible_payout_at' => now()->addDays($refundDays),
-            'external_payment_id' => $data['external_payment_id'] ?? null,
-        ]);
+        if (! empty($data['external_payment_id'])) {
+            $keys[] = 'payment:'.(string) $data['external_payment_id'];
+        }
 
-        Log::info('[AffiliateEvent] Commission created', [
-            'commission_id' => $commission->id,
-            'affiliate_id' => $affiliateId,
-            'campaign_id' => $campaignId,
-            'order_id' => $data['order_id'],
-            'product' => $product,
-            'type' => $type,
-            'order_amount' => (string) $commission->order_amount,
-            'rate' => (string) $commission->rate,
-            'amount' => (string) $commission->amount,
-            'rate_source' => $commission->rate_source,
-            'order_total_source' => $orderTotalSource,
-        ]);
+        if ($type === 'initial') {
+            $keys[] = 'initial-order:'.(string) $data['order_id'];
+        }
 
-        return response()->json([
-            'status' => 'ok',
-            'commission_id' => $commission->id,
-            'affiliate_id' => $affiliateId,
-            'order_id' => $data['order_id'],
-            'type' => $type,
-            'rate' => (float) $commission->rate,
-            'amount' => (float) $commission->amount,
-            'eligible_after' => $commission->eligible_payout_at,
-        ]);
+        $locks = array_map(
+            static fn (string $key): string => 'ac:'.substr(hash('sha256', $key), 0, 60),
+            array_values(array_unique($keys))
+        );
+
+        sort($locks, SORT_STRING);
+        $acquired = [];
+
+        try {
+            foreach ($locks as $lock) {
+                $result = DB::selectOne('SELECT GET_LOCK(?, 30) AS acquired', [$lock]);
+
+                if ((int) ($result->acquired ?? 0) !== 1) {
+                    throw new \RuntimeException('Unable to acquire affiliate commission idempotency lock.');
+                }
+
+                $acquired[] = $lock;
+            }
+        } catch (Throwable $exception) {
+            $this->releaseIdempotencyLocks($acquired);
+            throw $exception;
+        }
+
+        return $acquired;
+    }
+
+    /**
+     * Release MySQL advisory locks acquired for commission idempotency.
+     *
+     * @param array<int, string> $locks
+     */
+    protected function releaseIdempotencyLocks(array $locks): void
+    {
+        if (DB::connection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
+        foreach (array_reverse($locks) as $lock) {
+            try {
+                DB::selectOne('SELECT RELEASE_LOCK(?) AS released', [$lock]);
+            } catch (Throwable $exception) {
+                Log::warning('[AffiliateEvent] Failed to release idempotency lock', [
+                    'lock' => $lock,
+                    'exception' => $exception::class,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
