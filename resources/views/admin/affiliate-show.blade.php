@@ -66,6 +66,54 @@
         </article>
     </section>
 
+    <section class="stellar-card stellar-card-pad stellar-section">
+        <div class="stellar-section-head">
+            <div>
+                <p class="stellar-eyebrow">Security</p>
+                <h2 class="stellar-section-title">Portal password</h2>
+                <p class="stellar-section-copy">Set a new login password for this affiliate.</p>
+            </div>
+            @if($portalUser)
+                <span class="stellar-badge {{ $portalUserProtected ? 'is-warning' : 'is-success' }}">{{ $portalUserProtected ? 'Protected admin account' : 'Portal account linked' }}</span>
+            @else
+                <span class="stellar-badge is-warning">No portal account linked</span>
+            @endif
+        </div>
+
+        @if($portalUser)
+            <p class="stellar-field-help" style="margin-bottom:16px;">Sign-in email: <strong>{{ $portalUser->email }}</strong></p>
+        @endif
+
+        @if($portalUserProtected)
+            <p class="stellar-field-help">This affiliate is linked to an administrator account. Its password must not be reset from Affiliate 360.</p>
+        @elseif(auth()->user()?->canManageAffiliateProgram())
+            <form method="POST" action="{{ route('affiliate.admin.affiliates.password.update', $affiliate) }}" class="stellar-form-grid" autocomplete="off">
+                @csrf
+                @method('PATCH')
+                <div class="stellar-form-row">
+                    <div class="stellar-field">
+                        <label class="stellar-label" for="affiliate-admin-password">New password</label>
+                        <input id="affiliate-admin-password" class="stellar-input" type="password" name="password" minlength="8" maxlength="255" autocomplete="new-password" required>
+                    </div>
+                    <div class="stellar-field">
+                        <label class="stellar-label" for="affiliate-admin-password-confirmation">Confirm new password</label>
+                        <input id="affiliate-admin-password-confirmation" class="stellar-input" type="password" name="password_confirmation" minlength="8" maxlength="255" autocomplete="new-password" required>
+                    </div>
+                </div>
+                @if(!$portalUser && !$affiliate->email)
+                    <p class="stellar-field-help">Add an email address to the affiliate profile before creating portal login access.</p>
+                @elseif(!$portalUser)
+                    <p class="stellar-field-help">Saving a password will create and link a portal login for {{ $affiliate->email }}.</p>
+                @endif
+                <div>
+                    <button class="stellar-btn stellar-btn-primary" type="submit" {{ !$portalUser && !$affiliate->email ? 'disabled' : '' }}>Set new password</button>
+                </div>
+            </form>
+        @else
+            <p class="stellar-field-help">Read only.</p>
+        @endif
+    </section>
+
     @php
         $affiliateRates = collect($rateMatrix);
         $vpnInitial = (float) ($affiliateRates->first(fn ($row) => $row['product'] === 'vpn' && $row['type'] === 'initial')['rate'] ?? 1.00);

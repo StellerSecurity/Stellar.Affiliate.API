@@ -11,6 +11,7 @@ use App\Models\Payout as AffiliatePayout;
 use App\Services\AffiliateOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -1328,6 +1329,46 @@ class AffiliatePortalController extends Controller
             'rateMatrix' => $rateMatrix,
             'esimFeedUrl' => (string) config('affiliate.resources.esim_feed_url'),
         ]);
+    }
+
+    public function passwordUpdate(Request $request)
+    {
+        if ($request->session()->has('affiliate_impersonation')) {
+            abort(403, 'Exit affiliate view before changing a password.');
+        }
+
+        $affiliate = $this->resolvedAffiliate($request);
+        if (! $affiliate || $this->isAdmin($request)) {
+            abort(403);
+        }
+
+        $user = $request->user();
+        if (! $user || (int) $affiliate->external_user_id !== (int) $user->id) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'string', 'min:8', 'max:255', 'confirmed'],
+        ]);
+
+        if (! Hash::check($data['current_password'], (string) $user->password)) {
+            return back()->withErrors([
+                'current_password' => 'Your current password is incorrect.',
+            ]);
+        }
+
+        $user->forceFill([
+            'password' => Hash::make($data['password']),
+            'remember_token' => Str::random(60),
+        ])->save();
+
+        Log::notice('Affiliate portal password changed by affiliate.', [
+            'affiliate_id' => (int) $affiliate->id,
+            'portal_user_id' => (int) $user->id,
+        ]);
+
+        return back()->with('status', 'Your password has been updated.');
     }
 
     // Legacy stubs (keeps old routes from exploding)

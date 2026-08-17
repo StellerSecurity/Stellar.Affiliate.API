@@ -15,6 +15,7 @@ use App\Services\AffiliateCommissionPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -128,6 +129,23 @@ class AffiliateAdminController extends Controller
         if (! $request->user()?->canManageAffiliateProgram()) {
             abort(403, 'You do not have permission to change program settings.');
         }
+    }
+
+    private function affiliatePortalUser(Affiliate $affiliate): ?User
+    {
+        if ($affiliate->external_user_id) {
+            $linkedUser = User::query()->find((int) $affiliate->external_user_id);
+            if ($linkedUser) {
+                return $linkedUser;
+            }
+        }
+
+        $email = mb_strtolower(trim((string) $affiliate->email));
+        if ($email === '') {
+            return null;
+        }
+
+        return User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
     }
 
     private function requireCommissionManager(Request $request): void
@@ -392,6 +410,8 @@ class AffiliateAdminController extends Controller
         $recentClicks = $affiliate->clicks()->latest()->take(10)->get();
         $payouts = $affiliate->payouts()->latest()->take(10)->get();
         $rateMatrix = $policy->matrix((int) $affiliate->id);
+        $portalUser = $this->affiliatePortalUser($affiliate);
+        $portalUserProtected = (bool) $portalUser?->hasAffiliateAdminAccess();
 
         $totals = [
             'commission' => (float) $affiliate->commissions()->whereIn('status', ['pending', 'approved', 'paid_out'])->sum('amount'),
@@ -407,7 +427,9 @@ class AffiliateAdminController extends Controller
             'recentClicks',
             'payouts',
             'rateMatrix',
-            'totals'
+            'totals',
+            'portalUser',
+            'portalUserProtected'
         )));
     }
 
@@ -665,6 +687,73 @@ class AffiliateAdminController extends Controller
         ])->save();
 
         return back()->with('status', 'Affiliate profile updated.');
+    }
+
+    public function affiliatePasswordUpdate(Request $request, Affiliate $affiliate)
+    {
+        $this->requireProgramManager($request);
+
+        $data = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'max:255', 'confirmed'],
+        ]);
+
+        $portalUser = $this->affiliatePortalUser($affiliate);
+
+        if ($portalUser?->hasAffiliateAdminAccess()) {
+            abort(403, 'Admin account passwords cannot be changed from an affiliate profile.');
+        }
+
+        if (! $portalUser) {
+            $email = mb_strtolower(trim((string) $affiliate->email));
+            if ($email === '') {
+                return back()->withErrors([
+                    'password' => 'Add an email address to the affiliate before creating portal login access.',
+                ]);
+            }
+
+            $portalUser = User::query()->whereRaw('LOWER(email) = ?', [$email])->first();
+
+            if ($portalUser?->hasAffiliateAdminAccess()) {
+                abort(403, 'Admin account passwords cannot be changed from an affiliate profile.');
+            }
+
+            if (! $portalUser) {
+                $portalUser = User::create([
+                    'name' => trim((string) ($affiliate->name ?: $affiliate->public_code)),
+                    'email' => $email,
+                    'password' => Hash::make($data['password']),
+                ]);
+            }
+        }
+
+        $otherAffiliate = Affiliate::query()
+            ->where('external_user_id', (int) $portalUser->id)
+            ->where('id', '!=', (int) $affiliate->id)
+            ->exists();
+
+        if ($otherAffiliate) {
+            return back()->withErrors([
+                'password' => 'That portal user is already linked to another affiliate.',
+            ]);
+        }
+
+        $portalUser->forceFill([
+            'password' => Hash::make($data['password']),
+            'remember_token' => Str::random(60),
+        ])->save();
+
+        if ((int) $affiliate->external_user_id !== (int) $portalUser->id) {
+            $affiliate->external_user_id = (int) $portalUser->id;
+            $affiliate->save();
+        }
+
+        Log::notice('Affiliate portal password changed by administrator.', [
+            'admin_user_id' => (int) $request->user()->id,
+            'affiliate_id' => (int) $affiliate->id,
+            'portal_user_id' => (int) $portalUser->id,
+        ]);
+
+        return back()->with('status', 'Affiliate portal password updated.');
     }
 
     public function affiliateRateUpdate(Request $request, Affiliate $affiliate, AffiliateCommissionPolicy $policy)

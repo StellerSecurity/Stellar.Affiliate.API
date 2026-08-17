@@ -67,6 +67,9 @@ Route::middleware(['auth:web', 'affiliate.admin'])
         Route::get('/affiliates/{affiliate}/exports/payouts', [AffiliateAdminController::class, 'affiliatePayoutsExport'])->name('affiliates.exports.payouts');
         Route::post('/affiliates/{affiliate}/view-as-affiliate', [AffiliateAdminController::class, 'startAffiliateView'])->name('affiliates.view-as');
         Route::patch('/affiliates/{affiliate}', [AffiliateAdminController::class, 'affiliateUpdate'])->name('affiliates.update');
+        Route::patch('/affiliates/{affiliate}/password', [AffiliateAdminController::class, 'affiliatePasswordUpdate'])
+            ->middleware('throttle:10,1')
+            ->name('affiliates.password.update');
         Route::put('/affiliates/{affiliate}/rates', [AffiliateAdminController::class, 'affiliateRateUpdate'])->name('affiliates.rates.update');
         Route::delete('/affiliates/{affiliate}/rates', [AffiliateAdminController::class, 'affiliateRateDelete'])->name('affiliates.rates.delete');
 
@@ -161,6 +164,10 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
         // Settings
         Route::get('/settings', [AffiliatePortalController::class, 'settings'])
             ->name('affiliate.settings');
+
+        Route::patch('/settings/password', [AffiliatePortalController::class, 'passwordUpdate'])
+            ->middleware('throttle:10,1')
+            ->name('affiliate.settings.password');
 
         // Clicks / Sessions / Commissions
         Route::get('/clicks', [AffiliatePortalController::class, 'clicks'])

@@ -53,6 +53,42 @@
             </article>
         </section>
 
+        @if(!session()->has('affiliate_impersonation'))
+            <section class="stellar-card stellar-card-pad stellar-section">
+                <div class="stellar-section-head">
+                    <div>
+                        <p class="stellar-eyebrow">Security</p>
+                        <h2 class="stellar-section-title">Change password</h2>
+                        <p class="stellar-section-copy">Update the password you use to sign in to Stellar Affiliate.</p>
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ route('affiliate.settings.password') }}" class="stellar-form-grid" autocomplete="off">
+                    @csrf
+                    @method('PATCH')
+                    <div class="stellar-field">
+                        <label class="stellar-label" for="affiliate-current-password">Current password</label>
+                        <input id="affiliate-current-password" class="stellar-input" type="password" name="current_password" maxlength="255" autocomplete="current-password" required>
+                        @error('current_password')<span class="stellar-field-error">{{ $message }}</span>@enderror
+                    </div>
+                    <div class="stellar-form-row">
+                        <div class="stellar-field">
+                            <label class="stellar-label" for="affiliate-new-password">New password</label>
+                            <input id="affiliate-new-password" class="stellar-input" type="password" name="password" minlength="8" maxlength="255" autocomplete="new-password" required>
+                            @error('password')<span class="stellar-field-error">{{ $message }}</span>@enderror
+                        </div>
+                        <div class="stellar-field">
+                            <label class="stellar-label" for="affiliate-new-password-confirmation">Confirm new password</label>
+                            <input id="affiliate-new-password-confirmation" class="stellar-input" type="password" name="password_confirmation" minlength="8" maxlength="255" autocomplete="new-password" required>
+                        </div>
+                    </div>
+                    <div>
+                        <button class="stellar-btn stellar-btn-primary" type="submit">Update password</button>
+                    </div>
+                </form>
+            </section>
+        @endif
+
         @php
             $effectiveRates = collect($rateMatrix);
             $vpnInitial = (float) ($effectiveRates->first(fn ($row) => $row['product'] === 'vpn' && $row['type'] === 'initial')['rate'] ?? 1.00);
