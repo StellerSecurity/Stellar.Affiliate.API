@@ -146,6 +146,7 @@ stages:
                 job_zip="$temp_dir/laravel-scheduler.zip"
                 credentials_file="$temp_dir/publishing-credentials.json"
                 netrc_file="$temp_dir/kudu.netrc"
+                upload_response_file="$temp_dir/webjob-upload-response.txt"
                 response_file="$temp_dir/webjob-response.json"
                 trap 'rm -rf "$temp_dir"' EXIT
 
@@ -176,12 +177,20 @@ stages:
                 PY
 
                 kudu_url="https://StellarAffiliateApiProd.scm.azurewebsites.net/api/triggeredwebjobs/laravel-scheduler"
-                curl --fail --silent --show-error \
+                upload_status="$(curl --silent --show-error \
                   --netrc-file "$netrc_file" \
                   --request PUT \
                   --header 'Content-Type: application/zip' \
+                  --header 'Content-Disposition: attachment; filename=laravel-scheduler.zip' \
                   --data-binary "@$job_zip" \
-                  "$kudu_url"
+                  --output "$upload_response_file" \
+                  --write-out '%{http_code}' \
+                  "$kudu_url")"
+                if [[ "$upload_status" != "200" && "$upload_status" != "201" && "$upload_status" != "204" ]]; then
+                  cat "$upload_response_file" >&2
+                  echo "Kudu WebJob upload failed with HTTP $upload_status" >&2
+                  exit 1
+                fi
 
                 curl --fail --silent --show-error \
                   --netrc-file "$netrc_file" \
