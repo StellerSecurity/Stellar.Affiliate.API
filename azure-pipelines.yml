@@ -49,6 +49,26 @@ stages:
       workingDirectory: $(rootFolder)
       displayName: 'Composer install'
 
+    - task: AzureCLI@2
+      displayName: 'Migrate and validate automatic payouts'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: $(rootFolder)
+        inlineScript: |
+          set -euo pipefail
+          umask 077
+          settings_file="$(Agent.TempDirectory)/stellar-affiliate-appsettings.json"
+          trap 'rm -f "$settings_file"' EXIT
+          az webapp config appsettings list \
+            --resource-group $(resourceGroupName) \
+            --name $(webAppName) \
+            --output json > "$settings_file"
+          php scripts/run-artisan-with-app-settings.php "$settings_file" migrate --force --no-interaction
+          php scripts/run-artisan-with-app-settings.php "$settings_file" affiliate:process-payouts --provider-check
+          php scripts/run-artisan-with-app-settings.php "$settings_file" affiliate:process-payouts --preview
+
     - task: ArchiveFiles@2
       displayName: 'Archive files'
       inputs:
