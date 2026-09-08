@@ -115,6 +115,11 @@ stages:
                     "name": "WEBSITE_SKIP_RUNNING_KUDUAGENT",
                     "value": "false",
                     "slotSetting": false
+                  },
+                  {
+                    "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE",
+                    "value": "true",
+                    "slotSetting": false
                   }
                 ]
               generalSettings: |
@@ -124,3 +129,71 @@ stages:
                     "healthCheckPath": "/up"
                   }
                 ]
+
+          - task: AzureCLI@2
+            displayName: 'Register Laravel scheduler WebJob'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+
+                temp_dir="$(Agent.TempDirectory)/stellar-affiliate-webjob"
+                package="$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
+                job_dir="$temp_dir/job"
+                job_zip="$temp_dir/laravel-scheduler.zip"
+                credentials_file="$temp_dir/publishing-credentials.json"
+                netrc_file="$temp_dir/kudu.netrc"
+                response_file="$temp_dir/webjob-response.json"
+                trap 'rm -rf "$temp_dir"' EXIT
+
+                mkdir -p "$job_dir"
+                unzip -j "$package" \
+                  'App_Data/jobs/triggered/laravel-scheduler/run.sh' \
+                  'App_Data/jobs/triggered/laravel-scheduler/settings.job' \
+                  -d "$job_dir"
+                chmod 755 "$job_dir/run.sh"
+                (cd "$job_dir" && zip -q "$job_zip" run.sh settings.job)
+
+                az webapp deployment list-publishing-credentials \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --output json > "$credentials_file"
+
+                python3 - "$credentials_file" "$netrc_file" <<'PY'
+                import json
+                import pathlib
+                import sys
+
+                credentials = json.loads(pathlib.Path(sys.argv[1]).read_text())
+                pathlib.Path(sys.argv[2]).write_text(
+                    "machine StellarAffiliateApiProd.scm.azurewebsites.net\n"
+                    f"login {credentials['publishingUserName']}\n"
+                    f"password {credentials['publishingPassword']}\n"
+                )
+                PY
+
+                kudu_url="https://StellarAffiliateApiProd.scm.azurewebsites.net/api/triggeredwebjobs/laravel-scheduler"
+                curl --fail --silent --show-error \
+                  --netrc-file "$netrc_file" \
+                  --request PUT \
+                  --header 'Content-Type: application/zip' \
+                  --data-binary "@$job_zip" \
+                  "$kudu_url"
+
+                curl --fail --silent --show-error \
+                  --netrc-file "$netrc_file" \
+                  "$kudu_url" > "$response_file"
+
+                python3 - "$response_file" <<'PY'
+                import json
+                import pathlib
+                import sys
+
+                webjob = json.loads(pathlib.Path(sys.argv[1]).read_text())
+                if webjob.get("name") != "laravel-scheduler":
+                    raise SystemExit("Kudu did not return the expected scheduler WebJob")
+                print("Laravel scheduler WebJob is registered in Kudu.")
+                PY
