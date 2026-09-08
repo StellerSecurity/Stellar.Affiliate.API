@@ -143,10 +143,8 @@ stages:
                 temp_dir="$(Agent.TempDirectory)/stellar-affiliate-webjob"
                 package="$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
                 job_dir="$temp_dir/job"
-                job_zip="$temp_dir/laravel-scheduler.zip"
                 credentials_file="$temp_dir/publishing-credentials.json"
                 netrc_file="$temp_dir/kudu.netrc"
-                upload_response_file="$temp_dir/webjob-upload-response.txt"
                 response_file="$temp_dir/webjob-response.json"
                 trap 'rm -rf "$temp_dir"' EXIT
 
@@ -156,7 +154,6 @@ stages:
                   'App_Data/jobs/triggered/laravel-scheduler/settings.job' \
                   -d "$job_dir"
                 chmod 755 "$job_dir/run.sh"
-                (cd "$job_dir" && zip -q "$job_zip" run.sh settings.job)
 
                 az webapp deployment list-publishing-credentials \
                   --resource-group $(resourceGroupName) \
@@ -176,26 +173,56 @@ stages:
                 )
                 PY
 
-                kudu_url="https://StellarAffiliateApiProd.scm.azurewebsites.net/api/triggeredwebjobs/laravel-scheduler"
-                kudu_upload_url="https://StellarAffiliateApiProd.scm.azurewebsites.net/api/zip/site/wwwroot/App_Data/jobs/triggered/laravel-scheduler/"
-                upload_status="$(curl --silent --show-error \
+                kudu_root="https://StellarAffiliateApiProd.scm.azurewebsites.net"
+                kudu_url="$kudu_root/api/triggeredwebjobs/laravel-scheduler"
+                kudu_job_path="site/jobs/triggered/laravel-scheduler"
+
+                directory_status="$(curl --silent --show-error \
                   --netrc-file "$netrc_file" \
                   --request PUT \
-                  --header 'Content-Type: application/zip' \
-                  --header 'Content-Disposition: attachment; filename=laravel-scheduler.zip' \
-                  --data-binary "@$job_zip" \
-                  --output "$upload_response_file" \
+                  --header 'If-Match: *' \
+                  --data '' \
+                  --output /dev/null \
                   --write-out '%{http_code}' \
-                  "$kudu_upload_url")"
-                if [[ "$upload_status" != "200" && "$upload_status" != "201" && "$upload_status" != "204" ]]; then
-                  cat "$upload_response_file" >&2
-                  echo "Kudu WebJob upload failed with HTTP $upload_status" >&2
+                  "$kudu_root/api/vfs/$kudu_job_path/")"
+                if [[ "$directory_status" != "200" && "$directory_status" != "201" && "$directory_status" != "204" && "$directory_status" != "409" ]]; then
+                  echo "Kudu WebJob directory creation failed with HTTP $directory_status" >&2
                   exit 1
                 fi
 
-                curl --fail --silent --show-error \
-                  --netrc-file "$netrc_file" \
-                  "$kudu_url" > "$response_file"
+                for file in run.sh settings.job; do
+                  upload_status="$(curl --silent --show-error \
+                    --netrc-file "$netrc_file" \
+                    --request PUT \
+                    --header 'If-Match: *' \
+                    --header 'Content-Type: application/octet-stream' \
+                    --data-binary "@$job_dir/$file" \
+                    --output /dev/null \
+                    --write-out '%{http_code}' \
+                    "$kudu_root/api/vfs/$kudu_job_path/$file")"
+                  if [[ "$upload_status" != "200" && "$upload_status" != "201" && "$upload_status" != "204" ]]; then
+                    echo "Kudu upload of $file failed with HTTP $upload_status" >&2
+                    exit 1
+                  fi
+                done
+
+                registered=false
+                for attempt in 1 2 3 4 5 6; do
+                  status="$(curl --silent --show-error \
+                    --netrc-file "$netrc_file" \
+                    --output "$response_file" \
+                    --write-out '%{http_code}' \
+                    "$kudu_url")"
+                  if [[ "$status" == "200" ]]; then
+                    registered=true
+                    break
+                  fi
+                  sleep 5
+                done
+                if [[ "$registered" != "true" ]]; then
+                  echo "Kudu did not register the scheduler WebJob (last HTTP $status)" >&2
+                  exit 1
+                fi
 
                 python3 - "$response_file" <<'PY'
                 import json
