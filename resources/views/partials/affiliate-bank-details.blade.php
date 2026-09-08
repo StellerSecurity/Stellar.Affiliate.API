@@ -46,5 +46,10 @@
             <button type="submit" class="stellar-btn stellar-btn-primary">Save bank details</button>
         </form>
     </details>
+    @else
+        <div class="stellar-notice stellar-section" role="status">
+            <strong>Bank details can only be added by the affiliate.</strong>
+            <p class="stellar-field-help">You are viewing this workspace as an administrator. Ask the affiliate to sign in to their own account, open Payouts and select Add bank details.</p>
+        </div>
     @endif
 </section>
