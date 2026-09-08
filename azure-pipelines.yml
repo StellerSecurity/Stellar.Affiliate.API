@@ -139,6 +139,11 @@ stages:
               appSettings: |
                 [
                   {
+                    "name": "AFFILIATE_AUTOMATIC_PAYOUTS_ENABLED",
+                    "value": "true",
+                    "slotSetting": false
+                  },
+                  {
                     "name": "WEBSITE_SKIP_RUNNING_KUDUAGENT",
                     "value": "false",
                     "slotSetting": false
