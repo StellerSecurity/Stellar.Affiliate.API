@@ -177,6 +177,7 @@ stages:
                 PY
 
                 kudu_url="https://StellarAffiliateApiProd.scm.azurewebsites.net/api/triggeredwebjobs/laravel-scheduler"
+                kudu_upload_url="https://StellarAffiliateApiProd.scm.azurewebsites.net/api/zip/site/wwwroot/App_Data/jobs/triggered/laravel-scheduler/"
                 upload_status="$(curl --silent --show-error \
                   --netrc-file "$netrc_file" \
                   --request PUT \
@@ -185,7 +186,7 @@ stages:
                   --data-binary "@$job_zip" \
                   --output "$upload_response_file" \
                   --write-out '%{http_code}' \
-                  "$kudu_url")"
+                  "$kudu_upload_url")"
                 if [[ "$upload_status" != "200" && "$upload_status" != "201" && "$upload_status" != "204" ]]; then
                   cat "$upload_response_file" >&2
                   echo "Kudu WebJob upload failed with HTTP $upload_status" >&2
