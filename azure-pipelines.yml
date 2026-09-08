@@ -6,6 +6,14 @@
 trigger:
 - main
 
+schedules:
+- cron: '5 1 * * *'
+  displayName: 'Daily production affiliate payouts'
+  branches:
+    include:
+    - main
+  always: true
+
 variables:
   # Azure Resource Manager connection created during pipeline creation
   azureSubscription: 'def0885f-b1b9-4ca2-ae7f-6804eab60b56'
@@ -69,6 +77,25 @@ stages:
           php scripts/run-artisan-with-app-settings.php "$settings_file" affiliate:process-payouts --provider-check
           php scripts/run-artisan-with-app-settings.php "$settings_file" affiliate:process-payouts --preview
 
+    - task: AzureCLI@2
+      displayName: 'Process scheduled affiliate payouts'
+      condition: and(succeeded(), eq(variables['Build.Reason'], 'Schedule'))
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: $(rootFolder)
+        inlineScript: |
+          set -euo pipefail
+          umask 077
+          settings_file="$(Agent.TempDirectory)/stellar-affiliate-appsettings.json"
+          trap 'rm -f "$settings_file"' EXIT
+          az webapp config appsettings list \
+            --resource-group $(resourceGroupName) \
+            --name $(webAppName) \
+            --output json > "$settings_file"
+          php scripts/run-artisan-with-app-settings.php "$settings_file" affiliate:process-payouts --no-interaction
+
     - task: ArchiveFiles@2
       displayName: 'Archive files'
       inputs:
@@ -85,7 +112,7 @@ stages:
 - stage: Deploy
   displayName: 'Deploy Web App'
   dependsOn: Build
-  condition: succeeded()
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'Schedule'))
   jobs:
   - deployment: DeploymentJob
     pool:
@@ -129,108 +156,3 @@ stages:
                     "healthCheckPath": "/up"
                   }
                 ]
-
-          - task: AzureCLI@2
-            displayName: 'Register Laravel scheduler WebJob'
-            inputs:
-              azureSubscription: $(azureSubscription)
-              scriptType: bash
-              scriptLocation: inlineScript
-              inlineScript: |
-                set -euo pipefail
-                umask 077
-
-                temp_dir="$(Agent.TempDirectory)/stellar-affiliate-webjob"
-                package="$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
-                job_dir="$temp_dir/job"
-                credentials_file="$temp_dir/publishing-credentials.json"
-                netrc_file="$temp_dir/kudu.netrc"
-                response_file="$temp_dir/webjob-response.json"
-                trap 'rm -rf "$temp_dir"' EXIT
-
-                mkdir -p "$job_dir"
-                unzip -j "$package" \
-                  'App_Data/jobs/triggered/laravel-scheduler/run.sh' \
-                  'App_Data/jobs/triggered/laravel-scheduler/settings.job' \
-                  -d "$job_dir"
-                chmod 755 "$job_dir/run.sh"
-
-                az webapp deployment list-publishing-credentials \
-                  --resource-group $(resourceGroupName) \
-                  --name $(webAppName) \
-                  --output json > "$credentials_file"
-
-                python3 - "$credentials_file" "$netrc_file" <<'PY'
-                import json
-                import pathlib
-                import sys
-
-                credentials = json.loads(pathlib.Path(sys.argv[1]).read_text())
-                pathlib.Path(sys.argv[2]).write_text(
-                    "machine StellarAffiliateApiProd.scm.azurewebsites.net\n"
-                    f"login {credentials['publishingUserName']}\n"
-                    f"password {credentials['publishingPassword']}\n"
-                )
-                PY
-
-                kudu_root="https://StellarAffiliateApiProd.scm.azurewebsites.net"
-                kudu_url="$kudu_root/api/triggeredwebjobs/laravel-scheduler"
-                kudu_job_path="site/jobs/triggered/laravel-scheduler"
-
-                directory_status="$(curl --silent --show-error \
-                  --netrc-file "$netrc_file" \
-                  --request PUT \
-                  --header 'If-Match: *' \
-                  --data '' \
-                  --output /dev/null \
-                  --write-out '%{http_code}' \
-                  "$kudu_root/api/vfs/$kudu_job_path/")"
-                if [[ "$directory_status" != "200" && "$directory_status" != "201" && "$directory_status" != "204" && "$directory_status" != "409" ]]; then
-                  echo "Kudu WebJob directory creation failed with HTTP $directory_status" >&2
-                  exit 1
-                fi
-
-                for file in run.sh settings.job; do
-                  upload_status="$(curl --silent --show-error \
-                    --netrc-file "$netrc_file" \
-                    --request PUT \
-                    --header 'If-Match: *' \
-                    --header 'Content-Type: application/octet-stream' \
-                    --data-binary "@$job_dir/$file" \
-                    --output /dev/null \
-                    --write-out '%{http_code}' \
-                    "$kudu_root/api/vfs/$kudu_job_path/$file")"
-                  if [[ "$upload_status" != "200" && "$upload_status" != "201" && "$upload_status" != "204" ]]; then
-                    echo "Kudu upload of $file failed with HTTP $upload_status" >&2
-                    exit 1
-                  fi
-                done
-
-                registered=false
-                for attempt in 1 2 3 4 5 6; do
-                  status="$(curl --silent --show-error \
-                    --netrc-file "$netrc_file" \
-                    --output "$response_file" \
-                    --write-out '%{http_code}' \
-                    "$kudu_url")"
-                  if [[ "$status" == "200" ]]; then
-                    registered=true
-                    break
-                  fi
-                  sleep 5
-                done
-                if [[ "$registered" != "true" ]]; then
-                  echo "Kudu did not register the scheduler WebJob (last HTTP $status)" >&2
-                  exit 1
-                fi
-
-                python3 - "$response_file" <<'PY'
-                import json
-                import pathlib
-                import sys
-
-                webjob = json.loads(pathlib.Path(sys.argv[1]).read_text())
-                if webjob.get("name") != "laravel-scheduler":
-                    raise SystemExit("Kudu did not return the expected scheduler WebJob")
-                print("Laravel scheduler WebJob is registered in Kudu.")
-                PY
