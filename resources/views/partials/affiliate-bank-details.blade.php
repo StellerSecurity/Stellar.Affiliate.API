@@ -47,9 +47,33 @@
         </form>
     </details>
     @else
+        @php
+            $adminBankDetails = ($bankMethod ?? null) ? ($bankMethod->encrypted_details ?? []) : [];
+            $adminBankFields = [
+                'profile_type' => 'Account holder type',
+                'first_name' => 'First name',
+                'last_name' => 'Last name',
+                'company_name' => 'Legal company name',
+                'street_line1' => 'Account holder address',
+                'street_line2' => 'Address line 2',
+                'city' => 'City',
+                'region' => 'State / region',
+                'postcode' => 'Postal code',
+                'country' => 'Residence / company country',
+                'bank_country' => 'Bank country',
+                'iban' => 'IBAN',
+                'bic' => 'SWIFT / BIC',
+            ];
+        @endphp
         <div class="stellar-notice stellar-section" role="status">
-            <strong>Bank details can only be added by the affiliate.</strong>
-            <p class="stellar-field-help">You are viewing this workspace as an administrator. Ask the affiliate to sign in to their own account, open Payouts and select Add bank details.</p>
+            <strong>Affiliate bank details (read only)</strong>
+            <p class="stellar-field-help">Only the affiliate can add or replace these details from their own account.</p>
         </div>
+        @foreach($adminBankFields as $field => $label)
+            <div style="margin-top:12px">
+                <label for="admin-bank-{{ $field }}" class="stellar-label">{{ $label }}</label>
+                <input id="admin-bank-{{ $field }}" type="text" class="stellar-input" value="{{ $adminBankDetails[$field] ?? 'Not provided' }}" readonly>
+            </div>
+        @endforeach
     @endif
 </section>
