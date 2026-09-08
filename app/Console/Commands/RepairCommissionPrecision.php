@@ -24,34 +24,34 @@ class RepairCommissionPrecision extends Command
             return self::SUCCESS;
         }
 
-        $missingSource = DB::table('affiliate_commissions')
+        $missingSource = DB::table('affiliate_commissions')->whereNull('payout_id')
             ->where(function ($query) {
                 $query->whereNull('order_amount')->orWhereNull('rate');
             })
             ->count();
 
-        $before = DB::table('affiliate_commissions')
+        $before = DB::table('affiliate_commissions')->whereNull('payout_id')
             ->whereNotNull('order_amount')
             ->whereNotNull('rate')
             ->whereRaw('ABS(amount - (order_amount * rate)) > 0.0000004')
             ->count();
 
         DB::transaction(function (): void {
-            DB::statement('UPDATE affiliate_commissions SET amount = order_amount * rate WHERE order_amount IS NOT NULL AND rate IS NOT NULL');
+            DB::statement('UPDATE affiliate_commissions SET amount = order_amount * rate WHERE payout_id IS NULL AND order_amount IS NOT NULL AND rate IS NOT NULL');
 
             if (Schema::hasTable('payouts')) {
                 // Pending/processing payouts are accounting projections and should track the exact linked commission total.
-                DB::statement("\n                    UPDATE payouts p\n                    SET p.amount = COALESCE((\n                        SELECT SUM(ac.amount)\n                        FROM affiliate_commissions ac\n                        WHERE ac.payout_id = p.id\n                    ), p.amount)\n                    WHERE p.status <> 'paid'\n                ");
+                DB::statement("\n                    UPDATE payouts p\n                    SET p.amount = COALESCE((\n                        SELECT SUM(ac.amount)\n                        FROM affiliate_commissions ac\n                        WHERE ac.payout_id = p.id\n                    ), p.amount)\n                    WHERE p.status <> 'paid' AND p.method_type <> 'revolut_bank'\n                ");
             }
         });
 
-        $remaining = DB::table('affiliate_commissions')
+        $remaining = DB::table('affiliate_commissions')->whereNull('payout_id')
             ->whereNotNull('order_amount')
             ->whereNotNull('rate')
             ->whereRaw('ABS(amount - (order_amount * rate)) > 0.0000004')
             ->count();
 
-        $example = DB::table('affiliate_commissions')
+        $example = DB::table('affiliate_commissions')->whereNull('payout_id')
             ->select(['id', 'order_amount', 'rate', 'amount', 'currency', 'status'])
             ->whereNotNull('order_amount')
             ->whereNotNull('rate')

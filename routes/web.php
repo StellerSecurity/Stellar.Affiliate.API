@@ -110,6 +110,9 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
     ->group(function () {
 
         // Guided setup
+        Route::put('/payouts/bank-details', [\App\Http\Controllers\AffiliateBankDetailsController::class, 'update'])
+            ->middleware('throttle:5,1')->name('affiliate.payouts.bank-details');
+
         Route::get('/onboarding', [AffiliatePortalController::class, 'onboarding'])
             ->name('affiliate.onboarding');
 
@@ -203,5 +206,4 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
 Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
     ->middleware('affiliate.track.prepare')
     ->name('affiliate.track.public');
-
 

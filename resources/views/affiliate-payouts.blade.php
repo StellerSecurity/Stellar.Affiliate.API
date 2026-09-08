@@ -30,6 +30,7 @@
             </div>
         </section>
     @else
+        @include('partials.affiliate-bank-details')
         <section class="stellar-grid-3">
             <article class="stellar-card stellar-metric">
                 <div class="stellar-metric-label">Ready for payout</div>
@@ -61,6 +62,7 @@
                 <div><span>2</span><strong>Approved</strong><p>The commission is ready to be included in a payout.</p></div>
                 <div><span>3</span><strong>Paid out</strong><p>The commission has been paid.</p></div>
             </div>
+            <p class="stellar-field-help">Eligible, approved EUR commissions are included in a payout every 30 days when your available balance is at least €100. Payment is submitted seven days after the payout is prepared. Balances below €100 carry forward. Bank processing may take additional time.</p>
             @if($lastPayout)
                 <p class="stellar-field-help" style="margin-top:16px;">Last completed payout: {{ $lastPayout->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($lastPayout->amount) }} on {{ $lastPayout->paid_at?->format('M j, Y') ?: $lastPayout->updated_at?->format('M j, Y') }}.</p>
             @endif

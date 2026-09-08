@@ -1032,7 +1032,25 @@ class AffiliateAdminController extends Controller
             abort(422, 'A note is required when reversing a paid commission.');
         }
 
-        DB::transaction(function () use ($request, $commission, $fromStatus, $toStatus, $note) {
+        DB::transaction(function () use ($request, $commission, $isSuperAdmin, $toStatus, $note) {
+            $commission = AffiliateCommission::whereKey($commission->id)->lockForUpdate()->firstOrFail();
+            $fromStatus = (string) $commission->status;
+            if ($fromStatus === $toStatus) {
+                return;
+            }
+            if ($fromStatus === 'paid_out' && ! $isSuperAdmin) {
+                abort(422, 'Paid commissions are locked. Only a super admin can reverse them.');
+            }
+            if ($fromStatus === 'paid_out' && strlen(trim((string) $note)) < 5) {
+                abort(422, 'A note is required when reversing a paid commission.');
+            }
+            if ($commission->payout_id) {
+                $linkedPayout = Payout::whereKey($commission->payout_id)->lockForUpdate()->first();
+                if ($linkedPayout?->request_id) {
+                    abort_unless($linkedPayout->status === 'pending' && $toStatus === 'rejected', 422,
+                        'This commission is reserved for an automatic payout. Reconcile the payout before changing it.');
+                }
+            }
             $commission->status = $toStatus;
 
             if ($toStatus === 'pending') {
@@ -1129,6 +1147,7 @@ class AffiliateAdminController extends Controller
     public function payoutStatusUpdate(Request $request, Payout $payout)
     {
         $this->requireCommissionManager($request);
+        abort_if($payout->request_id !== null, 422, 'Revolut payout status is managed by bank reconciliation.');
 
         $data = $request->validate([
             'status' => ['required', Rule::in(['pending', 'processing', 'paid', 'failed'])],

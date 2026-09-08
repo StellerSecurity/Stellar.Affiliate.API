@@ -13,6 +13,9 @@ variables:
   # Web app name
   webAppName: 'StellarAffiliateApiProd'
 
+  # Resource group containing the web app
+  resourceGroupName: 'switzerland_group'
+
   # Agent VM image name
   vmImageName: 'ubuntu-latest'
 
@@ -79,3 +82,25 @@ stages:
               appName: $(webAppName)
               appType: webAppLinux
               package: $(Pipeline.Workspace)/drop/$(Build.BuildId).zip
+
+          - task: AzureAppServiceSettings@1
+            displayName: 'Configure scheduler and health check'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              appName: $(webAppName)
+              resourceGroupName: $(resourceGroupName)
+              appSettings: |
+                [
+                  {
+                    "name": "WEBSITE_SKIP_RUNNING_KUDUAGENT",
+                    "value": "false",
+                    "slotSetting": false
+                  }
+                ]
+              generalSettings: |
+                [
+                  {
+                    "alwaysOn": true,
+                    "healthCheckPath": "/up"
+                  }
+                ]

@@ -25,7 +25,7 @@ class RepairCommissionPolicy extends Command
         $dryRun = (bool) $this->option('dry-run');
         $includePaid = (bool) $this->option('include-paid');
 
-        $query = AffiliateCommission::query()
+        $query = AffiliateCommission::query()->whereNull('payout_id')
             ->whereIn('status', $includePaid ? ['pending', 'approved', 'paid_out'] : ['pending', 'approved'])
             ->orderBy('id');
 
@@ -169,7 +169,7 @@ class RepairCommissionPolicy extends Command
                             ]);
                         }
 
-                        DB::table('affiliate_commissions')->where('id', $commission->id)->update($update);
+                        DB::table('affiliate_commissions')->whereNull('payout_id')->where('id', $commission->id)->update($update);
                     });
                 }
 
@@ -181,7 +181,7 @@ class RepairCommissionPolicy extends Command
         $this->newLine(2);
 
         if (! $dryRun && Schema::hasTable('payouts')) {
-            DB::statement("\n                UPDATE payouts p\n                SET p.amount = COALESCE((\n                    SELECT SUM(ac.amount)\n                    FROM affiliate_commissions ac\n                    WHERE ac.payout_id = p.id\n                ), p.amount)\n                WHERE p.status <> 'paid'\n            ");
+            DB::statement("\n                UPDATE payouts p\n                SET p.amount = COALESCE((\n                    SELECT SUM(ac.amount)\n                    FROM affiliate_commissions ac\n                    WHERE ac.payout_id = p.id\n                ), p.amount)\n                WHERE p.status <> 'paid' AND p.method_type <> 'revolut_bank'\n            ");
         }
 
         $this->table(['Metric', 'Count'], [

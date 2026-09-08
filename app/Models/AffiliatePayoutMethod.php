@@ -9,6 +9,8 @@ class AffiliatePayoutMethod extends Model
 {
     use HasFactory;
 
+    protected $hidden = ['data', 'encrypted_details'];
+
     protected $fillable = [
         'affiliate_id',
         'type',
@@ -20,6 +22,8 @@ class AffiliatePayoutMethod extends Model
         'affiliate_id' => 'integer',
         'data'         => 'array',
         'is_default'   => 'boolean',
+        'encrypted_details' => 'encrypted:array',
+        'verified_at' => 'datetime',
     ];
 
     public function affiliate()

@@ -25,6 +25,11 @@ class Payout extends Model
         'amount'                  => 'decimal:6',
         'method_details_snapshot' => 'array',
         'paid_at'                 => 'datetime',
+        'cycle_at' => 'datetime',
+        'scheduled_at' => 'datetime',
+        'attempted_at' => 'datetime',
+        'checked_at' => 'datetime',
+        'commission_total' => 'decimal:6',
     ];
 
     public function affiliate()

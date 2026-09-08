@@ -1088,6 +1088,7 @@ class AffiliatePortalController extends Controller
         $lastPayout = AffiliatePayout::where('affiliate_id', $aid)->where('status', 'paid')->orderByDesc('created_at')->first();
 
         return view('affiliate-payouts', [
+            'bankMethod' => $currentAffiliate->payoutMethods()->where('type', 'revolut_bank')->where('is_default', true)->latest('id')->first(),
             'payouts' => $payouts,
             'availableCommission' => $availableCommission,
             'pendingCommission' => $pendingCommission,

@@ -60,6 +60,11 @@ The Laravel framework is open-sourced software licensed under the [MIT license](
 
 ## Affiliate order details
 
+For automatic Revolut affiliate payments (EUR 100 minimum, 30-day cycles and a
+seven-day hold), see [the implementation and rollout guide](docs/automatic-payouts.md).
+The integration is disabled by default and requires staging verification and
+Revolut account configuration before activation.
+
 The affiliate portal can fetch read-only order details from Stellar Commerce for conversions that already belong to the signed-in affiliate.
 
 Install dependencies normally:
