@@ -65,8 +65,14 @@ REVOLUT_SOURCE_ACCOUNT_ID=
 REVOLUT_CLIENT_ID=
 REVOLUT_JWT_ISSUER=stellarafi.com
 REVOLUT_PRIVATE_KEY_PATH=
+REVOLUT_PRIVATE_KEY_BASE64=
 REVOLUT_REFRESH_TOKEN=
 ```
+
+Set exactly one private-key option. For Azure App Service, prefer
+`REVOLUT_PRIVATE_KEY_BASE64`: base64-encode the PEM locally and save only the
+encoded value as a secret App Setting. `REVOLUT_PRIVATE_KEY_PATH` remains
+available for hosts that mount a secret file. Never commit either value.
 
 For the agreed start date, the first period is `2026-09-01 00:00 UTC` through
 `2026-10-01 00:00 UTC`, and its seven-day hold ends on `2026-10-08 00:00 UTC`.
@@ -98,6 +104,9 @@ Once dependencies have passed the user's security policy and are available:
 4. Configure the agreed start date. Preview readiness with
    `php artisan affiliate:process-payouts --preview`. This shows counts only,
    does not calculate a payment preview, and makes no bank requests or writes.
+   Validate Production OAuth and the selected EUR source account with
+   `php artisan affiliate:process-payouts --provider-check`; this authenticates
+   and reads the configured account, but cannot create a counterparty or payment.
 5. Deploy the additive migration before serving the new code and rebuild the
    configuration cache using the existing deployment process.
 6. The deployment pipeline enables **Always On**, sets the health-check path to

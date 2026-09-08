@@ -13,6 +13,7 @@ return [
         'client_id' => env('REVOLUT_CLIENT_ID'),
         'issuer' => env('REVOLUT_JWT_ISSUER'),
         'private_key_path' => env('REVOLUT_PRIVATE_KEY_PATH'),
+        'private_key_base64' => env('REVOLUT_PRIVATE_KEY_BASE64'),
         'refresh_token' => env('REVOLUT_REFRESH_TOKEN'),
     ],
 ];

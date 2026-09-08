@@ -33,7 +33,7 @@ class RevolutBusinessClient
         if ($this->accessToken && time() < $this->expiresAt) {
             return;
         }
-        foreach (['client_id', 'issuer', 'private_key_path', 'refresh_token'] as $key) {
+        foreach (['client_id', 'issuer', 'refresh_token'] as $key) {
             if (! config('payouts.revolut.'.$key)) {
                 throw new RuntimeException('Missing Revolut setting: '.$key);
             }
@@ -45,7 +45,20 @@ class RevolutBusinessClient
             'aud' => 'https://revolut.com',
             'exp' => time() + 300,
         ], JSON_THROW_ON_ERROR));
-        $key = @openssl_pkey_get_private('file://'.config('payouts.revolut.private_key_path'));
+        $configuredKey = (string) config('payouts.revolut.private_key_base64');
+        if ($configuredKey !== '') {
+            $keyMaterial = base64_decode($configuredKey, true);
+            if (! is_string($keyMaterial) || $keyMaterial === '') {
+                throw new RuntimeException('Invalid base64-encoded Revolut private key.');
+            }
+        } else {
+            $path = (string) config('payouts.revolut.private_key_path');
+            if ($path === '') {
+                throw new RuntimeException('Missing Revolut private key setting.');
+            }
+            $keyMaterial = 'file://'.$path;
+        }
+        $key = @openssl_pkey_get_private($keyMaterial);
         if (! $key || ! openssl_sign($assertion, $signature, $key, OPENSSL_ALGO_SHA256)) {
             throw new RuntimeException('Cannot sign Revolut client assertion.');
         }

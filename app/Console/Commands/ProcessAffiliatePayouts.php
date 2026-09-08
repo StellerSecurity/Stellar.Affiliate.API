@@ -7,17 +7,37 @@ use App\Models\AffiliatePayoutMethod;
 use App\Models\Payout;
 use App\Services\AutomaticAffiliatePayouts;
 use App\Services\RevolutBankRegistration;
+use App\Services\RevolutBusinessClient;
 use App\Support\PayoutPolicy;
 use Illuminate\Console\Command;
 use Throwable;
 
 class ProcessAffiliatePayouts extends Command
 {
-    protected $signature = 'affiliate:process-payouts {--preview : Read-only readiness counts; no bank API calls or database writes}';
+    protected $signature = 'affiliate:process-payouts
+        {--preview : Read-only readiness counts; no bank API calls or database writes}
+        {--provider-check : Authenticate and validate the configured Revolut source account without creating a payment}';
     protected $description = 'Register bank recipients, prepare 30-day affiliate payouts, and submit after a seven-day hold.';
 
-    public function handle(AutomaticAffiliatePayouts $payouts, RevolutBankRegistration $banks): int
+    public function handle(AutomaticAffiliatePayouts $payouts, RevolutBankRegistration $banks, RevolutBusinessClient $client): int
     {
+        if ($this->option('provider-check')) {
+            try {
+                $sourceAccountId = (string) config('payouts.revolut.source_account_id');
+                if ($sourceAccountId === '') {
+                    throw new \RuntimeException('Missing Revolut source account setting.');
+                }
+                $source = $client->get('/accounts/'.rawurlencode($sourceAccountId));
+                if (($source['currency'] ?? null) !== 'EUR' || ($source['state'] ?? null) !== 'active') {
+                    throw new \RuntimeException('Configured source account is not an active EUR account.');
+                }
+                $this->info('Revolut provider check passed: Production authentication and active EUR source account verified.');
+                return self::SUCCESS;
+            } catch (Throwable $exception) {
+                $this->error('Revolut provider check failed; verify credentials, permissions and the EUR source account.');
+                return self::FAILURE;
+            }
+        }
         if ($this->option('preview')) {
             $this->table(['State', 'Count'], [
                 ['Approved EUR commissions without payout', \App\Models\AffiliateCommission::where('status', 'approved')->where('currency', 'EUR')->whereNull('payout_id')->count()],
