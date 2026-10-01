@@ -11,19 +11,9 @@ class AffiliatePayoutSlackNotifier
 {
     public function sendReadyForApproval(Payout $payout): string
     {
-        $token = (string) config('services.slack.notifications.bot_user_oauth_token');
-        $channel = (string) config('payouts.slack.channel_id');
-        if ($token === '' || $channel === '') {
-            throw new RuntimeException('Affiliate payout Slack notifications are not configured.');
-        }
-
-        $adminUrl = (string) config('payouts.slack.admin_url');
-        $response = $this->request($token)->post('https://slack.com/api/chat.postMessage', [
-            'channel' => $channel,
+        return $this->post([
             'client_msg_id' => $this->clientMessageId($payout),
             'text' => 'An affiliate payout is ready for finance approval.',
-            'unfurl_links' => false,
-            'unfurl_media' => false,
             'blocks' => [
                 [
                     'type' => 'header',
@@ -38,12 +28,44 @@ class AffiliatePayoutSlackNotifier
                     'elements' => [[
                         'type' => 'button',
                         'text' => ['type' => 'plain_text', 'text' => 'Review payouts'],
-                        'url' => $adminUrl,
+                        'url' => (string) config('payouts.slack.admin_url'),
                         'action_id' => 'review_affiliate_payouts',
                     ]],
                 ],
             ],
         ]);
+    }
+
+    public function sendTest(): string
+    {
+        return $this->post([
+            'text' => 'Affiliate payout alert test completed successfully.',
+            'blocks' => [
+                [
+                    'type' => 'header',
+                    'text' => ['type' => 'plain_text', 'text' => 'Affiliate payout alerts connected', 'emoji' => true],
+                ],
+                [
+                    'type' => 'section',
+                    'text' => ['type' => 'mrkdwn', 'text' => 'Production configuration test passed. No payout was created and no affiliate or bank details were sent.'],
+                ],
+            ],
+        ]);
+    }
+
+    private function post(array $message): string
+    {
+        $token = (string) config('services.slack.notifications.bot_user_oauth_token');
+        $channel = (string) config('payouts.slack.channel_id');
+        if ($token === '' || $channel === '') {
+            throw new RuntimeException('Affiliate payout Slack notifications are not configured.');
+        }
+
+        $response = $this->request($token)->post('https://slack.com/api/chat.postMessage', array_merge([
+            'channel' => $channel,
+            'unfurl_links' => false,
+            'unfurl_media' => false,
+        ], $message));
 
         $payload = $response->json();
         if (! $response->successful() || ! is_array($payload) || ($payload['ok'] ?? false) !== true) {

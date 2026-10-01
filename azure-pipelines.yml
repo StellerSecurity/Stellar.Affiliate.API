@@ -11,6 +11,10 @@ parameters:
   displayName: 'Send payout-details campaign to eligible affiliates'
   type: boolean
   default: false
+- name: testAffiliatePayoutSlack
+  displayName: 'Send non-sensitive affiliate payout Slack test'
+  type: boolean
+  default: false
 
 schedules:
 - cron: '5 1 * * *'
@@ -219,8 +223,38 @@ stages:
                     "name": "AFFILIATE_PAYOUT_ADMIN_URL",
                     "value": "https://stellarafi.com/affiliate/admin/payouts",
                     "slotSetting": false
+                  },
+                  {
+                    "name": "SLACK_BOT_USER_OAUTH_TOKEN",
+                    "value": "$(SLACK_BOT_USER_OAUTH_TOKEN)",
+                    "slotSetting": true
                   }
                 ]
+
+          - task: AzureCLI@2
+            displayName: 'Test affiliate payout Slack alert'
+            condition: and(succeeded(), ${{ eq(parameters.testAffiliatePayoutSlack, true) }})
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(Pipeline.Workspace)/drop
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+                settings_file="$(Agent.TempDirectory)/stellar-affiliate-appsettings.json"
+                work_dir="$(Agent.TempDirectory)/stellar-affiliate-slack-test"
+                package_path="$(find "$(Pipeline.Workspace)/drop" -maxdepth 1 -name '*.zip' -print -quit)"
+                test -n "$package_path"
+                rm -rf "$work_dir"
+                mkdir -p "$work_dir"
+                unzip -q "$package_path" -d "$work_dir"
+                trap 'rm -rf "$settings_file" "$work_dir"' EXIT
+                az webapp config appsettings list \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --output json > "$settings_file"
+                php "$work_dir/scripts/run-artisan-with-app-settings.php" "$settings_file" affiliate:test-payout-slack --send --no-interaction
 
           - task: AzureCLI@2
             displayName: 'Send approved payout-details test email'
