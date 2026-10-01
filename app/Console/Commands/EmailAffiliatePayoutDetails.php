@@ -2,11 +2,10 @@
 
 namespace App\Console\Commands;
 
-use App\Mail\AffiliatePayoutDetailsReminder;
 use App\Models\Affiliate;
 use App\Models\AffiliateEmailDelivery;
+use App\Services\AffiliateNotificationClient;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 class EmailAffiliatePayoutDetails extends Command
@@ -25,7 +24,7 @@ class EmailAffiliatePayoutDetails extends Command
 
     protected $description = 'Email active affiliates who still need to add payout bank details.';
 
-    public function handle(): int
+    public function handle(AffiliateNotificationClient $notifications): int
     {
         if ($this->option('preview') === $this->option('send')) {
             $this->error('Choose exactly one of --preview or --send.');
@@ -40,13 +39,13 @@ class EmailAffiliatePayoutDetails extends Command
                 return self::INVALID;
             }
 
-            if (in_array(config('mail.default'), ['array', 'log'], true)) {
-                $this->error('Production email transport is not configured.');
-
-                return self::FAILURE;
-            }
-
-            Mail::to($testAddress)->send(new AffiliatePayoutDetailsReminder('Blerim', true));
+            $notifications->sendPayoutDetailsReminder(
+                (string) $testAddress,
+                'Blerim',
+                self::CAMPAIGN.'-test-blerim',
+                'test-blerim',
+                true,
+            );
             $this->info('Test email sent to blerim@cazimi.dk. No affiliate campaign emails were sent.');
 
             return self::SUCCESS;
@@ -77,22 +76,16 @@ class EmailAffiliatePayoutDetails extends Command
         ]]);
 
         if ($this->option('preview')) {
-            $this->line('Configured mail transport: '.config('mail.default'));
+            $this->line('Notification API: '.(config('stellar-notifications.base_url') ? 'configured' : 'not configured'));
 
             return self::SUCCESS;
-        }
-
-        if (in_array(config('mail.default'), ['array', 'log'], true)) {
-            $this->error('Production email transport is not configured.');
-
-            return self::FAILURE;
         }
 
         $sent = 0;
         $skipped = 0;
         $failed = 0;
 
-        $recipients->lazyById()->each(function (Affiliate $affiliate) use (&$sent, &$skipped, &$failed) {
+        $recipients->lazyById()->each(function (Affiliate $affiliate) use ($notifications, &$sent, &$skipped, &$failed) {
             $delivery = AffiliateEmailDelivery::firstOrCreate(
                 ['affiliate_id' => $affiliate->id, 'campaign' => self::CAMPAIGN],
                 ['status' => 'pending'],
@@ -112,7 +105,12 @@ class EmailAffiliatePayoutDetails extends Command
             ]);
 
             try {
-                Mail::to($affiliate->email)->send(new AffiliatePayoutDetailsReminder($affiliate->name ?: 'Affiliate partner'));
+                $notifications->sendPayoutDetailsReminder(
+                    (string) $affiliate->email,
+                    $affiliate->name ?: 'Affiliate partner',
+                    self::CAMPAIGN.'-affiliate-'.$affiliate->id,
+                    (string) $affiliate->id,
+                );
                 $delivery->update(['status' => 'sent', 'sent_at' => now()]);
                 $sent++;
             } catch (Throwable $exception) {
