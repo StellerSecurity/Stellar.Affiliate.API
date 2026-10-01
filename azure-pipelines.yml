@@ -163,6 +163,40 @@ stages:
                 ]
 
           - task: AzureCLI@2
+            displayName: 'Configure existing Stellar Notification API client'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+                source_settings="$(Agent.TempDirectory)/stellar-notification-source-settings.json"
+                target_settings="$(Agent.TempDirectory)/stellar-affiliate-notification-settings.json"
+                trap 'rm -f "$source_settings" "$target_settings"' EXIT
+
+                az webapp config appsettings list \
+                  --resource-group StellarSwitzerlandSubscription \
+                  --name StellarCommerceAPIProd \
+                  --output json > "$source_settings"
+
+                jq '[.[] | select(
+                    .name == "STELLAR_NOTIFICATIONS_BASE_URL"
+                    or .name == "STELLAR_NOTIFICATIONS_BASIC_USERNAME"
+                    or .name == "STELLAR_NOTIFICATIONS_BASIC_PASSWORD"
+                  ) | {name: .name, value: .value, slotSetting: false}]' \
+                  "$source_settings" > "$target_settings"
+
+                test "$(jq 'length' "$target_settings")" -eq 3
+                test "$(jq '[.[] | select((.value // "") == "")] | length' "$target_settings")" -eq 0
+
+                az webapp config appsettings set \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --settings "@$target_settings" \
+                  --output none
+
+          - task: AzureCLI@2
             displayName: 'Send approved payout-details test email'
             condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/stellar/affiliate-payout-details-email'))
             inputs:
