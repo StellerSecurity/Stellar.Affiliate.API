@@ -67,21 +67,28 @@ class AutomaticAffiliatePayoutsTest extends TestCase
             'currency' => 'EUR', 'status' => $status, 'eligible_payout_at' => now()->subDay(), 'approved_at' => now()->subDay()]);
     }
 
-    public function test_waits_seven_days_and_does_not_pay_twice(): void
+    public function test_waits_seven_days_and_creates_one_draft_without_paying(): void
     {
         $commission = $this->commission();
         $payout = $this->service->prepare($this->affiliate->id, now()->toDateTimeImmutable());
         $this->assertNotNull($payout);
         $this->assertNull($this->service->prepare($this->affiliate->id, now()->toDateTimeImmutable()));
         $this->service->process($payout->id);
-        $this->assertCount(0, $this->bank->payments);
+        $this->assertCount(0, $this->bank->drafts);
         $this->travel(7)->days();
         $this->service->process($payout->id);
         $this->service->process($payout->id);
-        $this->assertCount(1, $this->bank->payments);
+        $this->assertCount(1, $this->bank->drafts);
+        $this->assertSame('approved', $commission->fresh()->status);
+        $this->assertSame('processing', $payout->fresh()->status);
+        $this->assertSame('draft', $payout->fresh()->provider_state);
+        $this->assertSame(100.0, $this->bank->drafts[0]['payments'][0]['amount']);
+
+        $this->bank->draftExists = false;
+        $this->bank->transactionState = 'completed';
+        $this->service->process($payout->id);
         $this->assertSame('paid_out', $commission->fresh()->status);
         $this->assertSame('paid', $payout->fresh()->status);
-        $this->assertSame(100.0, $this->bank->payments[0]['amount']);
     }
 
     public function test_subthreshold_pending_and_refund_window_are_excluded(): void
@@ -102,8 +109,9 @@ class AutomaticAffiliatePayoutsTest extends TestCase
         try { $this->service->process($payout->id); } catch (\RuntimeException) {}
         $this->assertSame('processing', $payout->fresh()->status);
         $this->service->process($payout->id);
-        $this->assertCount(1, $this->bank->payments);
-        $this->assertSame('paid', $payout->fresh()->status);
+        $this->assertCount(1, $this->bank->drafts);
+        $this->assertSame('draft', $payout->fresh()->provider_state);
+        $this->assertSame('processing', $payout->fresh()->status);
     }
 
     public function test_rejection_during_hold_stops_payment(): void
@@ -113,7 +121,7 @@ class AutomaticAffiliatePayoutsTest extends TestCase
         $commission->status = 'rejected'; $commission->save();
         $this->travel(7)->days();
         $this->service->process($payout->id);
-        $this->assertCount(0, $this->bank->payments);
+        $this->assertCount(0, $this->bank->drafts);
         $this->assertSame('reserved_commissions_changed', $payout->fresh()->attention_reason);
     }
 
@@ -138,11 +146,11 @@ class AutomaticAffiliatePayoutsTest extends TestCase
         $replacement->save();
         $this->travel(7)->days();
         $this->service->process($payout->id);
-        $this->assertCount(0, $this->bank->payments);
+        $this->assertCount(0, $this->bank->drafts);
         $this->assertTrue($payout->fresh()->scheduled_at->equalTo(now()->addDays(7)));
         $this->travel(7)->days();
         $this->service->process($payout->id);
-        $this->assertSame('new-destination', $this->bank->payments[0]['receiver']['account_id']);
+        $this->assertSame('new-destination', $this->bank->drafts[0]['payments'][0]['receiver']['account_id']);
     }
 
     public function test_returned_transfer_reopens_reserved_commissions(): void
@@ -151,28 +159,48 @@ class AutomaticAffiliatePayoutsTest extends TestCase
         $payout = $this->service->prepare($this->affiliate->id, now()->toDateTimeImmutable());
         $this->travel(7)->days();
         $this->service->process($payout->id);
-        $this->bank->lookupState = 'reverted';
+        $this->bank->draftExists = false;
+        $this->bank->transactionState = 'reverted';
         $this->service->process($payout->id);
         $this->assertSame('failed', $payout->fresh()->status);
         $this->assertSame('approved', $commission->fresh()->status);
         $this->assertSame($payout->id, $commission->fresh()->payout_id);
-        $this->assertCount(1, $this->bank->payments);
+        $this->assertCount(1, $this->bank->drafts);
     }
 }
 
 class FakeRevolutClient extends RevolutBusinessClient
 {
-    public array $payments = [];
+    public array $drafts = [];
     public bool $loseResponse = false;
-    public string $lookupState = 'completed';
+    public bool $draftExists = true;
+    public ?string $transactionState = null;
     public function environment(): string { return 'sandbox'; }
     public function authenticate(): void {}
     public function get(string $path, array $query = []): array { return ['currency' => 'EUR', 'state' => 'active']; }
-    public function pay(array $payload): array
+    public function createPaymentDraft(array $payload): array
     {
-        $this->payments[] = $payload;
+        $this->drafts[] = $payload;
         if ($this->loseResponse) { throw new \RuntimeException('Simulated timeout after bank acceptance.'); }
-        return ['id' => 'transaction', 'state' => 'completed'];
+        return ['id' => 'draft-1'];
     }
-    public function lookup(string $requestId): ?array { return ['id' => 'transaction', 'state' => $this->lookupState]; }
+    public function paymentDraft(string $draftId): ?array
+    {
+        return $this->draftExists ? ['title' => $this->drafts[0]['title'], 'payments' => []] : null;
+    }
+    public function paymentDrafts(): array
+    {
+        return array_map(fn ($draft) => ['id' => 'draft-1', 'title' => $draft['title']], $this->drafts);
+    }
+    public function transactions(array $query): array
+    {
+        if (! $this->transactionState || empty($this->drafts)) { return []; }
+        $payment = $this->drafts[0]['payments'][0];
+        return [[
+            'id' => 'transaction', 'type' => 'transfer', 'state' => $this->transactionState,
+            'reference' => $payment['reference'],
+            'legs' => [['account_id' => $payment['account_id'], 'amount' => -$payment['amount'], 'currency' => 'EUR']],
+        ]];
+    }
+    public function lookup(string $requestId): ?array { return null; }
 }

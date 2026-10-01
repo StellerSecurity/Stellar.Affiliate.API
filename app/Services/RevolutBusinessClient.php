@@ -99,12 +99,45 @@ class RevolutBusinessClient
         return $response->json();
     }
 
-    public function pay(array $payload): array
+    public function createPaymentDraft(array $payload): array
     {
-        // Intentionally no HTTP retries. An uncertain submission is reconciled by request_id.
-        $response = $this->http()->post('/pay', $payload);
+        // Intentionally no HTTP retries. A later run searches drafts by their unique title.
+        $response = $this->http()->post('/payment-drafts', $payload);
+        if ($response->status() !== 201 || ! is_array($response->json()) || ! is_string($response->json('id'))) {
+            throw new RuntimeException('Revolut draft submission needs reconciliation.');
+        }
+
+        return $response->json();
+    }
+
+    public function paymentDraft(string $draftId): ?array
+    {
+        $response = $this->http()->get('/payment-drafts/'.rawurlencode($draftId));
+        if ($response->status() === 404) {
+            return null;
+        }
         if (! $response->successful() || ! is_array($response->json())) {
-            throw new RuntimeException('Revolut submission needs reconciliation.');
+            throw new RuntimeException('Revolut draft lookup failed.');
+        }
+
+        return $response->json();
+    }
+
+    public function paymentDrafts(): array
+    {
+        $response = $this->http()->get('/payment-drafts', ['source' => 'api']);
+        if (! $response->successful() || ! is_array($response->json('payment_orders'))) {
+            throw new RuntimeException('Revolut draft list lookup failed.');
+        }
+
+        return $response->json('payment_orders');
+    }
+
+    public function transactions(array $query): array
+    {
+        $response = $this->http()->get('/transactions', $query);
+        if (! $response->successful() || ! is_array($response->json())) {
+            throw new RuntimeException('Revolut transaction reconciliation failed.');
         }
 
         return $response->json();
