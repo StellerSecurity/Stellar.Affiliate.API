@@ -17,7 +17,7 @@ class ProcessAffiliatePayouts extends Command
     protected $signature = 'affiliate:process-payouts
         {--preview : Read-only readiness counts; no bank API calls or database writes}
         {--provider-check : Authenticate and validate the configured Revolut source account without creating a payment}';
-    protected $description = 'Register bank recipients, prepare 30-day affiliate payouts, and submit after a seven-day hold.';
+    protected $description = 'Register bank recipients, prepare 30-day affiliate payouts, and create Revolut drafts after a seven-day hold.';
 
     public function handle(AutomaticAffiliatePayouts $payouts, RevolutBankRegistration $banks, RevolutBusinessClient $client): int
     {

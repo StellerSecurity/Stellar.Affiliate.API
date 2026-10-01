@@ -62,7 +62,7 @@
                 <div><span>2</span><strong>Approved</strong><p>The commission is ready to be included in a payout.</p></div>
                 <div><span>3</span><strong>Paid out</strong><p>The commission has been paid.</p></div>
             </div>
-            <p class="stellar-field-help">Eligible, approved EUR commissions are included in a payout every 30 days when your available balance is at least €100. Payment is submitted seven days after the payout is prepared. Balances below €100 carry forward. Bank processing may take additional time.</p>
+            <p class="stellar-field-help">Eligible, approved EUR commissions are included in a payout every 30 days when your available balance is at least €100. Seven days after the payout is prepared, a payment draft is created in Revolut for finance approval. Funds are sent only after finance approves the draft. Balances below €100 carry forward. Bank processing may take additional time.</p>
             @if($lastPayout)
                 <p class="stellar-field-help" style="margin-top:16px;">Last completed payout: {{ $lastPayout->currency ?: 'EUR' }} {{ \App\Support\CommissionMath::display($lastPayout->amount) }} on {{ $lastPayout->paid_at?->format('M j, Y') ?: $lastPayout->updated_at?->format('M j, Y') }}.</p>
             @endif
@@ -134,6 +134,11 @@
                                     'failed' => 'is-danger',
                                     default => '',
                                 };
+                                $statusLabel = match ($payout->provider_state) {
+                                    'draft' => 'Awaiting finance approval',
+                                    'pending' => 'Bank processing',
+                                    default => ucfirst($status),
+                                };
                             @endphp
                             <tr>
                                 <td>{{ $payout->created_at?->format('M j, Y · H:i') }}</td>
@@ -141,7 +146,7 @@
                                 <td>{{ ucfirst($payout->method_type ?: '—') }}</td>
                                 <td><span class="stellar-code" title="{{ $payout->external_reference ?: '—' }}">{{ $payout->external_reference ?: '—' }}</span></td>
                                 <td>{{ $payout->paid_at?->format('M j, Y') ?: '—' }}</td>
-                                <td><span class="stellar-badge {{ $statusClass }}">{{ ucfirst($status) }}</span></td>
+                                <td><span class="stellar-badge {{ $statusClass }}">{{ $statusLabel }}</span></td>
                             </tr>
                         @endforeach
                         </tbody>

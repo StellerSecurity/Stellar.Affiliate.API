@@ -98,6 +98,7 @@ class AutomaticAffiliatePayouts
             'account_id' => $data['account_id'],
             'iban_last_four' => $data['iban_last_four'],
             'name_validation_id' => $data['name_validation_id'] ?? null,
+            'submission_type' => 'payment_draft',
         ];
     }
 
@@ -108,6 +109,23 @@ class AutomaticAffiliatePayouts
             throw new RuntimeException('Payout belongs to a different Revolut environment.');
         }
         $this->client->authenticate();
+        if (in_array($initial->status, ['processing', 'paid'], true)) {
+            if (($initial->method_details_snapshot['submission_type'] ?? null) === 'payment_draft') {
+                $this->reconcileDraft($initial);
+            } else {
+                // Reconcile any transfer submitted by the previous direct-payment implementation.
+                $transaction = $this->client->lookup($initial->request_id);
+                if ($transaction) {
+                    $this->record($initial->id, $transaction);
+                } else {
+                    Payout::whereKey($initial->id)->whereIn('status', ['processing', 'paid'])->update([
+                        'checked_at' => now(), 'attention_reason' => 'submission_unconfirmed_no_resend',
+                    ]);
+                }
+            }
+
+            return;
+        }
         $claimed = DB::transaction(function () use ($initial) {
             $affiliate = Affiliate::whereKey($initial->affiliate_id)->lockForUpdate()->firstOrFail();
             $payout = Payout::whereKey($initial->id)->lockForUpdate()->firstOrFail();
@@ -148,30 +166,21 @@ class AutomaticAffiliatePayouts
             if (($source['currency'] ?? '') !== 'EUR' || ($source['state'] ?? '') !== 'active') {
                 throw new RuntimeException('Source account must be active and denominated in EUR.');
             }
+            $snapshot['submission_type'] = 'payment_draft';
+            $payout->method_details_snapshot = $snapshot;
+            $reference = $this->reference($payout);
             $payload = [
-                'request_id' => $payout->request_id,
-                'account_id' => $snapshot['source_account_id'],
-                'receiver' => ['counterparty_id' => $snapshot['counterparty_id'], 'account_id' => $snapshot['account_id']],
-                // Only convert to JSON number at the external API boundary.
-                'amount' => (float) $payout->amount,
-                'currency' => 'EUR',
-                'reference' => 'Stellar affiliate '.$payout->id,
+                'title' => $this->draftTitle($payout),
+                'payments' => [[
+                    'account_id' => $snapshot['source_account_id'],
+                    'receiver' => ['counterparty_id' => $snapshot['counterparty_id'], 'account_id' => $snapshot['account_id']],
+                    // Only convert to JSON number at the external API boundary.
+                    'amount' => (float) $payout->amount,
+                    'currency' => 'EUR',
+                    'reference' => $reference,
+                ]],
             ];
-            if (! empty($snapshot['name_validation_id'])) {
-                $payload['name_validation_id'] = $snapshot['name_validation_id'];
-            }
-            if ($this->client->environment() === 'production') {
-                $requirements = $this->client->post('/pay/fields', ['account_id' => $payload['account_id'], 'receiver' => $payload['receiver']]);
-                if (! isset($requirements['fields']) || ! is_array($requirements['fields'])) {
-                    throw new RuntimeException('Cannot determine transfer requirements.');
-                }
-                foreach ($requirements['fields'] as $field) {
-                    if (($field['required'] ?? false) && ! array_key_exists($field['name'], $payload)) {
-                        throw new RuntimeException('Additional transfer fields require configuration.');
-                    }
-                }
-            }
-            // Commit the claim BEFORE calling /pay. No automatic second POST, even after a crash.
+            // Commit the claim BEFORE creating the draft. No automatic second POST after uncertainty.
             $payout->status = 'processing';
             $payout->attempted_at = now();
             $payout->attention_reason = null;
@@ -180,18 +189,109 @@ class AutomaticAffiliatePayouts
             return ['id' => $payout->id, 'payload' => $payload];
         });
         if ($claimed) {
-            $transaction = $this->client->pay($claimed['payload']);
-            $this->record($claimed['id'], $transaction);
-        } elseif (in_array($initial->status, ['processing', 'paid'], true)) {
-            $transaction = $this->client->lookup($initial->request_id);
-            if ($transaction) {
-                $this->record($initial->id, $transaction);
-            } else {
-                Payout::whereKey($initial->id)->whereIn('status', ['processing', 'paid'])->update([
-                    'checked_at' => now(), 'attention_reason' => 'submission_unconfirmed_no_resend',
-                ]);
+            $draft = $this->client->createPaymentDraft($claimed['payload']);
+            $this->recordDraft($claimed['id'], $draft);
+        }
+    }
+
+    private function draftTitle(Payout $payout): string
+    {
+        return 'Stellar affiliate payout '.$payout->id;
+    }
+
+    private function reference(Payout $payout): string
+    {
+        return 'Stellar affiliate '.$payout->id;
+    }
+
+    private function recordDraft(int $id, array $draft): void
+    {
+        if (empty($draft['id']) || ! is_string($draft['id'])) {
+            throw new RuntimeException('Incomplete Revolut payment draft response.');
+        }
+        DB::transaction(function () use ($id, $draft) {
+            $payout = Payout::whereKey($id)->lockForUpdate()->firstOrFail();
+            if ($payout->status !== 'processing') {
+                return;
+            }
+            $snapshot = $payout->method_details_snapshot;
+            if (! empty($snapshot['draft_id']) && $snapshot['draft_id'] !== $draft['id']) {
+                throw new RuntimeException('Revolut payment draft ID mismatch.');
+            }
+            $snapshot['submission_type'] = 'payment_draft';
+            $snapshot['draft_id'] = $draft['id'];
+            $payout->method_details_snapshot = $snapshot;
+            $payout->external_reference = $draft['id'];
+            $payout->provider_state = 'draft';
+            $payout->checked_at = now();
+            $payout->attention_reason = null;
+            $payout->save();
+        });
+    }
+
+    private function reconcileDraft(Payout $payout): void
+    {
+        $snapshot = $payout->method_details_snapshot;
+        $draftId = $snapshot['draft_id'] ?? null;
+        if (! $draftId) {
+            $matches = array_values(array_filter($this->client->paymentDrafts(), fn ($draft) =>
+                ($draft['title'] ?? null) === $this->draftTitle($payout) && is_string($draft['id'] ?? null)
+            ));
+            if (count($matches) > 1) {
+                Payout::whereKey($payout->id)->update(['checked_at' => now(), 'attention_reason' => 'duplicate_revolut_drafts']);
+                return;
+            }
+            if (count($matches) === 1) {
+                $this->recordDraft($payout->id, $matches[0]);
+                return;
+            }
+        } elseif ($this->client->paymentDraft($draftId)) {
+            Payout::whereKey($payout->id)->where('status', 'processing')->update([
+                'provider_state' => 'draft', 'checked_at' => now(), 'attention_reason' => null,
+            ]);
+            return;
+        }
+
+        $transactions = array_values(array_filter($this->client->transactions([
+            'from' => ($payout->attempted_at ?: $payout->created_at)->copy()->subDay()->toIso8601String(),
+            'to' => now()->toIso8601String(),
+            'account' => $snapshot['source_account_id'],
+            'count' => 1000,
+            'type' => 'transfer',
+        ]), fn ($transaction) => $this->matchesTransaction($payout, $transaction)));
+        if (count($transactions) > 1) {
+            Payout::whereKey($payout->id)->update(['checked_at' => now(), 'attention_reason' => 'duplicate_revolut_transactions']);
+            return;
+        }
+        if (count($transactions) === 1) {
+            $this->record($payout->id, $transactions[0]);
+            return;
+        }
+
+        Payout::whereKey($payout->id)->update([
+            'provider_state' => $draftId ? 'draft_sent_or_deleted' : 'draft_submission_unconfirmed',
+            'checked_at' => now(),
+            'attention_reason' => 'draft_requires_reconciliation',
+        ]);
+    }
+
+    private function matchesTransaction(Payout $payout, array $transaction): bool
+    {
+        if (($transaction['type'] ?? null) !== 'transfer'
+            || ($transaction['reference'] ?? null) !== $this->reference($payout)) {
+            return false;
+        }
+        $sourceAccountId = $payout->method_details_snapshot['source_account_id'] ?? null;
+        foreach ($transaction['legs'] ?? [] as $leg) {
+            if (($leg['account_id'] ?? null) === $sourceAccountId
+                && ($leg['currency'] ?? null) === 'EUR'
+                && isset($leg['amount'])
+                && PayoutPolicy::micros((string) abs((float) $leg['amount'])) === PayoutPolicy::micros($payout->amount)) {
+                return true;
             }
         }
+
+        return false;
     }
 
     private function record(int $id, array $transaction): void
@@ -199,6 +299,7 @@ class AutomaticAffiliatePayouts
         if (empty($transaction['id']) || ! is_string($transaction['state'] ?? null)) {
             throw new RuntimeException('Incomplete Revolut payment response.');
         }
+        $transaction['state'] = strtolower($transaction['state']);
         $initial = Payout::findOrFail($id);
         DB::transaction(function () use ($initial, $transaction) {
             Affiliate::whereKey($initial->affiliate_id)->lockForUpdate()->firstOrFail();
@@ -206,7 +307,9 @@ class AutomaticAffiliatePayouts
             if (! in_array($payout->status, ['processing', 'paid'], true)) {
                 return;
             }
-            if ($payout->external_reference && $payout->external_reference !== $transaction['id']) {
+            $snapshot = $payout->method_details_snapshot;
+            $isDraft = ($snapshot['submission_type'] ?? null) === 'payment_draft';
+            if (! $isDraft && $payout->external_reference && $payout->external_reference !== $transaction['id']) {
                 throw new RuntimeException('Revolut transaction ID mismatch.');
             }
             $payout->external_reference = $transaction['id'];
