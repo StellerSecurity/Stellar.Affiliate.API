@@ -35,7 +35,7 @@ class AffiliateNotificationClientTest extends TestCase
             && $request['event_name'] === 'affiliate_payout_details_required'
             && $request['email'] === 'blerim@cazimi.dk'
             && $request['idempotency_key'] === 'payout-details-test-blerim'
-            && $request['payload']['subject_prefix'] === '[TEST] '
+            && $request['payload']['subject_prefix'] === '[TEST]'
             && $request->hasHeader('Authorization')
         );
     }

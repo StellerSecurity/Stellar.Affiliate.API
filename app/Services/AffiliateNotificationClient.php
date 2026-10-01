@@ -44,7 +44,7 @@ class AffiliateNotificationClient
                 'payload' => [
                     'affiliate_name' => $affiliateName,
                     'payout_url' => $payoutUrl,
-                    'subject_prefix' => $test ? '[TEST] ' : '',
+                    'subject_prefix' => $test ? '[TEST]' : '',
                 ],
             ]);
 
