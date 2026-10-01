@@ -9,12 +9,17 @@ use App\Support\PayoutPolicy;
 use DateTimeImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 class AutomaticAffiliatePayouts
 {
-    public function __construct(private RevolutBusinessClient $client) {}
+    public function __construct(
+        private RevolutBusinessClient $client,
+        private ?AffiliatePayoutSlackNotifier $slackNotifier = null,
+    ) {}
 
     private function fingerprint(Collection $commissions): string
     {
@@ -190,7 +195,10 @@ class AutomaticAffiliatePayouts
         });
         if ($claimed) {
             $draft = $this->client->createPaymentDraft($claimed['payload']);
-            $this->recordDraft($claimed['id'], $draft);
+            $payout = $this->recordDraft($claimed['id'], $draft);
+            if ($payout) {
+                $this->notifyDraftIfNeeded($payout);
+            }
         }
     }
 
@@ -204,15 +212,15 @@ class AutomaticAffiliatePayouts
         return 'Stellar affiliate '.$payout->id;
     }
 
-    private function recordDraft(int $id, array $draft): void
+    private function recordDraft(int $id, array $draft): ?Payout
     {
         if (empty($draft['id']) || ! is_string($draft['id'])) {
             throw new RuntimeException('Incomplete payment draft response.');
         }
-        DB::transaction(function () use ($id, $draft) {
+        return DB::transaction(function () use ($id, $draft) {
             $payout = Payout::whereKey($id)->lockForUpdate()->firstOrFail();
             if ($payout->status !== 'processing') {
-                return;
+                return null;
             }
             $snapshot = $payout->method_details_snapshot;
             if (! empty($snapshot['draft_id']) && $snapshot['draft_id'] !== $draft['id']) {
@@ -226,7 +234,38 @@ class AutomaticAffiliatePayouts
             $payout->checked_at = now();
             $payout->attention_reason = null;
             $payout->save();
+
+            return $payout;
         });
+    }
+
+    private function notifyDraftIfNeeded(Payout $payout): void
+    {
+        $snapshot = $payout->method_details_snapshot;
+        if (! empty($snapshot['slack_notified_at'])) {
+            return;
+        }
+
+        try {
+            $notifier = $this->slackNotifier ?: app(AffiliatePayoutSlackNotifier::class);
+            $messageTimestamp = $notifier->sendReadyForApproval($payout);
+            DB::transaction(function () use ($payout, $messageTimestamp) {
+                $locked = Payout::whereKey($payout->id)->lockForUpdate()->firstOrFail();
+                $snapshot = $locked->method_details_snapshot;
+                if (! empty($snapshot['slack_notified_at'])) {
+                    return;
+                }
+                $snapshot['slack_notified_at'] = now()->toIso8601String();
+                $snapshot['slack_message_ts'] = $messageTimestamp;
+                $locked->method_details_snapshot = $snapshot;
+                $locked->save();
+            });
+        } catch (Throwable $exception) {
+            Log::error('Affiliate payout Slack notification failed.', [
+                'payout_id' => $payout->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function reconcileDraft(Payout $payout): void
@@ -242,13 +281,17 @@ class AutomaticAffiliatePayouts
                 return;
             }
             if (count($matches) === 1) {
-                $this->recordDraft($payout->id, $matches[0]);
+                $recorded = $this->recordDraft($payout->id, $matches[0]);
+                if ($recorded) {
+                    $this->notifyDraftIfNeeded($recorded);
+                }
                 return;
             }
         } elseif ($this->client->paymentDraft($draftId)) {
             Payout::whereKey($payout->id)->where('status', 'processing')->update([
                 'provider_state' => 'draft', 'checked_at' => now(), 'attention_reason' => null,
             ]);
+            $this->notifyDraftIfNeeded($payout->fresh());
             return;
         }
 

@@ -7,6 +7,11 @@ return [
     'period_days' => 30,
     'delay_days' => 7,
     'minimum_cents' => 10000,
+    'slack' => [
+        'channel_id' => env('AFFILIATE_PAYOUT_SLACK_CHANNEL_ID'),
+        'admin_url' => env('AFFILIATE_PAYOUT_ADMIN_URL', rtrim((string) env('APP_URL', 'https://stellarafi.com'), '/').'/affiliate/admin/payouts'),
+        'timeout_seconds' => (int) env('AFFILIATE_PAYOUT_SLACK_TIMEOUT', 10),
+    ],
     'revolut' => [
         'environment' => env('REVOLUT_ENVIRONMENT', 'sandbox'),
         'source_account_id' => env('REVOLUT_SOURCE_ACCOUNT_ID'),

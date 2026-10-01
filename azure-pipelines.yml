@@ -202,6 +202,26 @@ stages:
                   --settings "@$target_settings" \
                   --output none
 
+          - task: AzureAppServiceSettings@1
+            displayName: 'Configure affiliate payout Slack channel'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              appName: $(webAppName)
+              resourceGroupName: $(resourceGroupName)
+              appSettings: |
+                [
+                  {
+                    "name": "AFFILIATE_PAYOUT_SLACK_CHANNEL_ID",
+                    "value": "C0C6XNYD3H6",
+                    "slotSetting": false
+                  },
+                  {
+                    "name": "AFFILIATE_PAYOUT_ADMIN_URL",
+                    "value": "https://stellarafi.com/affiliate/admin/payouts",
+                    "slotSetting": false
+                  }
+                ]
+
           - task: AzureCLI@2
             displayName: 'Send approved payout-details test email'
             condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/stellar/affiliate-payout-details-email'), ${{ eq(parameters.sendAffiliatePayoutCampaign, false) }})
