@@ -9,6 +9,7 @@ $allowed = [
     ['migrate', '--force', '--no-interaction'],
     ['affiliate:process-payouts', '--provider-check'],
     ['affiliate:process-payouts', '--preview'],
+    ['affiliate:process-payouts', '--no-interaction'],
 ];
 
 if (! in_array($command, $allowed, true) || ! is_file($settingsPath)) {
