@@ -1147,7 +1147,7 @@ class AffiliateAdminController extends Controller
     public function payoutStatusUpdate(Request $request, Payout $payout)
     {
         $this->requireCommissionManager($request);
-        abort_if($payout->request_id !== null, 422, 'Revolut payout status is managed by bank reconciliation.');
+        abort_if($payout->request_id !== null, 422, 'Payout status is managed by bank reconciliation.');
 
         $data = $request->validate([
             'status' => ['required', Rule::in(['pending', 'processing', 'paid', 'failed'])],

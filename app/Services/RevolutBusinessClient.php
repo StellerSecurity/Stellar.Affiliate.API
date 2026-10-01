@@ -15,7 +15,7 @@ class RevolutBusinessClient
     {
         $environment = (string) config('payouts.revolut.environment');
         if (! in_array($environment, ['sandbox', 'production'], true)) {
-            throw new RuntimeException('Invalid Revolut environment.');
+            throw new RuntimeException('Invalid payment provider environment.');
         }
 
         return $environment;
@@ -35,7 +35,7 @@ class RevolutBusinessClient
         }
         foreach (['client_id', 'issuer', 'refresh_token'] as $key) {
             if (! config('payouts.revolut.'.$key)) {
-                throw new RuntimeException('Missing Revolut setting: '.$key);
+                throw new RuntimeException('Missing payment provider setting: '.$key);
             }
         }
         $encode = static fn (string $value): string => rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
@@ -49,18 +49,18 @@ class RevolutBusinessClient
         if ($configuredKey !== '') {
             $keyMaterial = base64_decode($configuredKey, true);
             if (! is_string($keyMaterial) || $keyMaterial === '') {
-                throw new RuntimeException('Invalid base64-encoded Revolut private key.');
+                throw new RuntimeException('Invalid base64-encoded payment provider private key.');
             }
         } else {
             $path = (string) config('payouts.revolut.private_key_path');
             if ($path === '') {
-                throw new RuntimeException('Missing Revolut private key setting.');
+                throw new RuntimeException('Missing payment provider private key setting.');
             }
             $keyMaterial = 'file://'.$path;
         }
         $key = @openssl_pkey_get_private($keyMaterial);
         if (! $key || ! openssl_sign($assertion, $signature, $key, OPENSSL_ALGO_SHA256)) {
-            throw new RuntimeException('Cannot sign Revolut client assertion.');
+            throw new RuntimeException('Cannot sign payment provider client assertion.');
         }
         $response = Http::asForm()->acceptJson()->timeout(30)->connectTimeout(10)
             ->withOptions(['allow_redirects' => false])->post($this->baseUrl().'/auth/token', [
@@ -72,7 +72,7 @@ class RevolutBusinessClient
             ]);
         if (! $response->successful() || ! is_string($response->json('access_token'))) {
             // Do not put response bodies or credentials in exceptions/logs.
-            throw new RuntimeException('Revolut authentication failed (HTTP '.$response->status().').');
+            throw new RuntimeException('Payment provider authentication failed (HTTP '.$response->status().').');
         }
         $this->accessToken = $response->json('access_token');
         $this->expiresAt = time() + max(1, (int) $response->json('expires_in', 2400) - 60);
@@ -93,7 +93,7 @@ class RevolutBusinessClient
             return null;
         }
         if (! $response->successful() || ! is_array($response->json())) {
-            throw new RuntimeException('Revolut transaction lookup failed.');
+            throw new RuntimeException('Payment transaction lookup failed.');
         }
 
         return $response->json();
@@ -104,7 +104,7 @@ class RevolutBusinessClient
         // Intentionally no HTTP retries. A later run searches drafts by their unique title.
         $response = $this->http()->post('/payment-drafts', $payload);
         if ($response->status() !== 201 || ! is_array($response->json()) || ! is_string($response->json('id'))) {
-            throw new RuntimeException('Revolut draft submission needs reconciliation.');
+            throw new RuntimeException('Payment draft submission needs reconciliation.');
         }
 
         return $response->json();
@@ -117,7 +117,7 @@ class RevolutBusinessClient
             return null;
         }
         if (! $response->successful() || ! is_array($response->json())) {
-            throw new RuntimeException('Revolut draft lookup failed.');
+            throw new RuntimeException('Payment draft lookup failed.');
         }
 
         return $response->json();
@@ -127,7 +127,7 @@ class RevolutBusinessClient
     {
         $response = $this->http()->get('/payment-drafts', ['source' => 'api']);
         if (! $response->successful() || ! is_array($response->json('payment_orders'))) {
-            throw new RuntimeException('Revolut draft list lookup failed.');
+            throw new RuntimeException('Payment draft list lookup failed.');
         }
 
         return $response->json('payment_orders');
@@ -137,7 +137,7 @@ class RevolutBusinessClient
     {
         $response = $this->http()->get('/transactions', $query);
         if (! $response->successful() || ! is_array($response->json())) {
-            throw new RuntimeException('Revolut transaction reconciliation failed.');
+            throw new RuntimeException('Payment transaction reconciliation failed.');
         }
 
         return $response->json();
@@ -147,7 +147,7 @@ class RevolutBusinessClient
     {
         $response = $this->http()->get($path, $query);
         if (! $response->successful() || ! is_array($response->json())) {
-            throw new RuntimeException('Revolut account validation failed.');
+            throw new RuntimeException('Payment account validation failed.');
         }
 
         return $response->json();
@@ -157,7 +157,7 @@ class RevolutBusinessClient
     {
         $response = $this->http()->post($path, $payload);
         if (! $response->successful() || ! is_array($response->json())) {
-            throw new RuntimeException('Revolut bank setup or payment preflight failed.');
+            throw new RuntimeException('Bank setup or payment preflight failed.');
         }
 
         return $response->json();

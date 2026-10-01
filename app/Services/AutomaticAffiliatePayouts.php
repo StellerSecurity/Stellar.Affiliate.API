@@ -88,7 +88,7 @@ class AutomaticAffiliatePayouts
     {
         $data = $method->data;
         if (empty($data['counterparty_id']) || empty($data['account_id']) || ! config('payouts.revolut.source_account_id')) {
-            throw new RuntimeException('Missing Revolut account mapping.');
+            throw new RuntimeException('Missing payment account mapping.');
         }
 
         return [
@@ -106,7 +106,7 @@ class AutomaticAffiliatePayouts
     {
         $initial = Payout::findOrFail($payoutId);
         if ($initial->provider_environment !== $this->client->environment()) {
-            throw new RuntimeException('Payout belongs to a different Revolut environment.');
+            throw new RuntimeException('Payout belongs to a different payment provider environment.');
         }
         $this->client->authenticate();
         if (in_array($initial->status, ['processing', 'paid'], true)) {
@@ -207,7 +207,7 @@ class AutomaticAffiliatePayouts
     private function recordDraft(int $id, array $draft): void
     {
         if (empty($draft['id']) || ! is_string($draft['id'])) {
-            throw new RuntimeException('Incomplete Revolut payment draft response.');
+            throw new RuntimeException('Incomplete payment draft response.');
         }
         DB::transaction(function () use ($id, $draft) {
             $payout = Payout::whereKey($id)->lockForUpdate()->firstOrFail();
@@ -216,7 +216,7 @@ class AutomaticAffiliatePayouts
             }
             $snapshot = $payout->method_details_snapshot;
             if (! empty($snapshot['draft_id']) && $snapshot['draft_id'] !== $draft['id']) {
-                throw new RuntimeException('Revolut payment draft ID mismatch.');
+                throw new RuntimeException('Payment draft ID mismatch.');
             }
             $snapshot['submission_type'] = 'payment_draft';
             $snapshot['draft_id'] = $draft['id'];
@@ -297,7 +297,7 @@ class AutomaticAffiliatePayouts
     private function record(int $id, array $transaction): void
     {
         if (empty($transaction['id']) || ! is_string($transaction['state'] ?? null)) {
-            throw new RuntimeException('Incomplete Revolut payment response.');
+            throw new RuntimeException('Incomplete payment response.');
         }
         $transaction['state'] = strtolower($transaction['state']);
         $initial = Payout::findOrFail($id);
@@ -310,7 +310,7 @@ class AutomaticAffiliatePayouts
             $snapshot = $payout->method_details_snapshot;
             $isDraft = ($snapshot['submission_type'] ?? null) === 'payment_draft';
             if (! $isDraft && $payout->external_reference && $payout->external_reference !== $transaction['id']) {
-                throw new RuntimeException('Revolut transaction ID mismatch.');
+                throw new RuntimeException('Payment transaction ID mismatch.');
             }
             $payout->external_reference = $transaction['id'];
             $payout->provider_state = $transaction['state'];
@@ -324,7 +324,7 @@ class AutomaticAffiliatePayouts
                         'affiliate_commission_id' => $commission->id,
                         'from_status' => $commission->status,
                         'to_status' => 'paid_out',
-                        'note' => 'Revolut completed payout '.$payout->id,
+                        'note' => 'Payment provider completed payout '.$payout->id,
                     ]);
                     $commission->status = 'paid_out';
                     $commission->paid_out_at = $payout->paid_at;
@@ -337,7 +337,7 @@ class AutomaticAffiliatePayouts
                             'affiliate_commission_id' => $commission->id,
                             'from_status' => $commission->status,
                             'to_status' => 'approved',
-                            'note' => 'Revolut returned payout '.$payout->id.'; funds remain reserved for reconciliation.',
+                            'note' => 'Payment provider returned payout '.$payout->id.'; funds remain reserved for reconciliation.',
                         ]);
                         $commission->status = 'approved';
                         $commission->paid_out_at = null;

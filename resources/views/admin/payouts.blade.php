@@ -5,7 +5,7 @@
     <div>
         <p class="stellar-eyebrow">Financial operations</p>
         <h1 class="stellar-page-title">Payouts</h1>
-        <p class="stellar-page-copy">Review Revolut drafts, approvals and completed payment references.</p>
+        <p class="stellar-page-copy">Review payment drafts, approvals and completed payment references.</p>
     </div>
 </section>
 <section class="stellar-card stellar-card-pad">
@@ -31,9 +31,9 @@
                 @php
                     $isDraft = ($payout->method_details_snapshot['submission_type'] ?? null) === 'payment_draft';
                     $statusLabel = match (true) {
-                        $payout->provider_state === 'draft' => 'Awaiting Revolut approval',
-                        $payout->provider_state === 'draft_sent_or_deleted' => 'Sent from Revolut',
-                        $payout->provider_state === 'pending' => 'Pending Revolut review',
+                        $payout->provider_state === 'draft' => 'Awaiting finance approval',
+                        $payout->provider_state === 'draft_sent_or_deleted' => 'Sent by payment provider',
+                        $payout->provider_state === 'pending' => 'Pending payment review',
                         default => ucfirst($payout->status),
                     };
                 @endphp
@@ -49,9 +49,9 @@
                         @if($payout->request_id)
                             @if($isDraft && $payout->provider_state === 'draft')
                                 <strong>Approval required</strong>
-                                <span class="stellar-cell-sub">Revolut Business → Transfers → Draft → Send</span>
+                                <span class="stellar-cell-sub">Open the payment draft and approve it to send</span>
                             @else
-                                <span class="stellar-cell-sub">Managed by Revolut reconciliation</span>
+                                <span class="stellar-cell-sub">Managed by payment reconciliation</span>
                             @endif
                             @if($payout->scheduled_at)<span class="stellar-cell-sub">Draft date: {{ $payout->scheduled_at->format('Y-m-d H:i') }}</span>@endif
                             @if($payout->attention_reason)<span class="stellar-cell-sub">Needs attention: {{ str_replace('_', ' ', $payout->attention_reason) }}</span>@endif
