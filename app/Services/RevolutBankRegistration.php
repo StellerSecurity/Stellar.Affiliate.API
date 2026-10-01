@@ -52,7 +52,7 @@ class RevolutBankRegistration
                     $name = $field['name'] ?? '';
                     $value = data_get($payload, $name) ?? data_get($payload, 'individual_name.'.$name);
                     if (($field['required'] ?? false) && ($value === null || $value === '')) {
-                        throw new RuntimeException('Additional bank fields required by Revolut.');
+                        throw new RuntimeException('Additional bank fields are required by the payment provider.');
                     }
                 }
             }
@@ -78,7 +78,7 @@ class RevolutBankRegistration
                 && BankDetails::normalize((string) ($account['iban'] ?? '')) === $details['iban']
             ));
             if (empty($counterparty['id']) || count($accounts) !== 1 || empty($accounts[0]['id'])) {
-                throw new RuntimeException('Revolut did not return a matching EUR bank account.');
+                throw new RuntimeException('The payment provider did not return a matching EUR bank account.');
             }
             $method->data = [
                 'iban_last_four' => substr($details['iban'], -4),
@@ -87,7 +87,7 @@ class RevolutBankRegistration
                 'account_id' => $accounts[0]['id'],
                 'name_validation_id' => $nameValidationId,
             ];
-            // Production reaches this point only after Revolut returns an exact VoP match.
+            // Production reaches this point only after the provider returns an exact VoP match.
             // Sandbox cannot perform real name validation and is always synthetic.
             $method->verified_at = now();
             $method->registration_error = null;

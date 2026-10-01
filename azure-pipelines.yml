@@ -6,6 +6,16 @@
 trigger:
 - main
 
+parameters:
+- name: sendAffiliatePayoutCampaign
+  displayName: 'Send payout-details campaign to eligible affiliates'
+  type: boolean
+  default: false
+- name: testAffiliatePayoutSlack
+  displayName: 'Send non-sensitive affiliate payout Slack test'
+  type: boolean
+  default: false
+
 schedules:
 - cron: '5 1 * * *'
   displayName: 'Daily production affiliate payouts'
@@ -161,3 +171,138 @@ stages:
                     "healthCheckPath": "/up"
                   }
                 ]
+
+          - task: AzureCLI@2
+            displayName: 'Configure existing Stellar Notification API client'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+                source_settings="$(Agent.TempDirectory)/stellar-notification-source-settings.json"
+                target_settings="$(Agent.TempDirectory)/stellar-affiliate-notification-settings.json"
+                trap 'rm -f "$source_settings" "$target_settings"' EXIT
+
+                az webapp config appsettings list \
+                  --resource-group StellarSwitzerlandSubscription \
+                  --name StellarCommerceAPIProd \
+                  --output json > "$source_settings"
+
+                jq '[.[] | select(
+                    .name == "STELLAR_NOTIFICATIONS_BASE_URL"
+                    or .name == "STELLAR_NOTIFICATIONS_BASIC_USERNAME"
+                    or .name == "STELLAR_NOTIFICATIONS_BASIC_PASSWORD"
+                  ) | {name: .name, value: .value, slotSetting: false}]' \
+                  "$source_settings" > "$target_settings"
+
+                test "$(jq 'length' "$target_settings")" -eq 3
+                test "$(jq '[.[] | select((.value // "") == "")] | length' "$target_settings")" -eq 0
+
+                az webapp config appsettings set \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --settings "@$target_settings" \
+                  --output none
+
+          - task: AzureAppServiceSettings@1
+            displayName: 'Configure affiliate payout Slack channel'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              appName: $(webAppName)
+              resourceGroupName: $(resourceGroupName)
+              appSettings: |
+                [
+                  {
+                    "name": "AFFILIATE_PAYOUT_SLACK_CHANNEL_ID",
+                    "value": "C0C6XNYD3H6",
+                    "slotSetting": false
+                  },
+                  {
+                    "name": "AFFILIATE_PAYOUT_ADMIN_URL",
+                    "value": "https://stellarafi.com/affiliate/admin/payouts",
+                    "slotSetting": false
+                  },
+                  {
+                    "name": "SLACK_BOT_USER_OAUTH_TOKEN",
+                    "value": "$(SLACK_BOT_USER_OAUTH_TOKEN)",
+                    "slotSetting": true
+                  }
+                ]
+
+          - task: AzureCLI@2
+            displayName: 'Test affiliate payout Slack alert'
+            condition: and(succeeded(), ${{ eq(parameters.testAffiliatePayoutSlack, true) }})
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(Pipeline.Workspace)/drop
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+                settings_file="$(Agent.TempDirectory)/stellar-affiliate-appsettings.json"
+                work_dir="$(Agent.TempDirectory)/stellar-affiliate-slack-test"
+                package_path="$(find "$(Pipeline.Workspace)/drop" -maxdepth 1 -name '*.zip' -print -quit)"
+                test -n "$package_path"
+                rm -rf "$work_dir"
+                mkdir -p "$work_dir"
+                unzip -q "$package_path" -d "$work_dir"
+                trap 'rm -rf "$settings_file" "$work_dir"' EXIT
+                az webapp config appsettings list \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --output json > "$settings_file"
+                php "$work_dir/scripts/run-artisan-with-app-settings.php" "$settings_file" affiliate:test-payout-slack --send --no-interaction
+
+          - task: AzureCLI@2
+            displayName: 'Send approved payout-details test email'
+            condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/stellar/affiliate-payout-details-email'), ${{ eq(parameters.sendAffiliatePayoutCampaign, false) }})
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(Pipeline.Workspace)/drop
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+                settings_file="$(Agent.TempDirectory)/stellar-affiliate-appsettings.json"
+                work_dir="$(Agent.TempDirectory)/stellar-affiliate-test-mail"
+                package_path="$(find "$(Pipeline.Workspace)/drop" -maxdepth 1 -name '*.zip' -print -quit)"
+                test -n "$package_path"
+                rm -rf "$work_dir"
+                mkdir -p "$work_dir"
+                unzip -q "$package_path" -d "$work_dir"
+                trap 'rm -rf "$settings_file" "$work_dir"' EXIT
+                az webapp config appsettings list \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --output json > "$settings_file"
+                php "$work_dir/scripts/run-artisan-with-app-settings.php" "$settings_file" affiliate:email-payout-details --send --test=blerim@cazimi.dk --no-interaction
+
+          - task: AzureCLI@2
+            displayName: 'Send approved payout-details campaign'
+            condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/stellar/affiliate-payout-details-email'), ${{ eq(parameters.sendAffiliatePayoutCampaign, true) }})
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(Pipeline.Workspace)/drop
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+                settings_file="$(Agent.TempDirectory)/stellar-affiliate-appsettings.json"
+                work_dir="$(Agent.TempDirectory)/stellar-affiliate-campaign"
+                package_path="$(find "$(Pipeline.Workspace)/drop" -maxdepth 1 -name '*.zip' -print -quit)"
+                test -n "$package_path"
+                rm -rf "$work_dir"
+                mkdir -p "$work_dir"
+                unzip -q "$package_path" -d "$work_dir"
+                trap 'rm -rf "$settings_file" "$work_dir"' EXIT
+                az webapp config appsettings list \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --output json > "$settings_file"
+                php "$work_dir/scripts/run-artisan-with-app-settings.php" "$settings_file" affiliate:email-payout-details --preview --no-interaction
+                php "$work_dir/scripts/run-artisan-with-app-settings.php" "$settings_file" affiliate:email-payout-details --send --no-interaction

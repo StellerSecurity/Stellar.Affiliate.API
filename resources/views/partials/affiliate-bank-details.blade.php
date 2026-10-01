@@ -1,8 +1,8 @@
 <section class="stellar-card stellar-card-pad stellar-section">
     <h2 class="stellar-section-title">Bank account for payouts</h2>
-    <p class="stellar-field-help">Payouts are in EUR. Enter the account holder's legal name and address exactly as registered with the bank. Your bank details are encrypted and shared with Revolut to process your payouts.</p>
+    <p class="stellar-field-help">Payouts are in EUR. Enter the account holder's legal name and address exactly as registered with the bank. Your bank details are encrypted and used only to process your payouts.</p>
     @if($bankMethod ?? null)
-        <p>Saved IBAN: •••• {{ $bankMethod->data['iban_last_four'] ?? '••••' }} · {{ $bankMethod->verified_at ? 'Registered with Revolut' : 'Awaiting bank registration' }}</p>
+        <p>Saved IBAN: •••• {{ $bankMethod->data['iban_last_four'] ?? '••••' }} · {{ $bankMethod->verified_at ? 'Bank details verified' : 'Awaiting bank verification' }}</p>
         @if($bankMethod->registration_error)
             <p role="status">Bank registration needs attention. Please check your details or contact support.</p>
         @endif

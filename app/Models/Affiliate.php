@@ -59,6 +59,11 @@ class Affiliate extends Model
         return $this->hasMany(AffiliatePayoutMethod::class);
     }
 
+    public function emailDeliveries()
+    {
+        return $this->hasMany(AffiliateEmailDelivery::class);
+    }
+
     public function apiKeys()
     {
         return $this->hasMany(AffiliateApiKey::class);

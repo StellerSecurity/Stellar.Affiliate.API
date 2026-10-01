@@ -16,8 +16,8 @@ class ProcessAffiliatePayouts extends Command
 {
     protected $signature = 'affiliate:process-payouts
         {--preview : Read-only readiness counts; no bank API calls or database writes}
-        {--provider-check : Authenticate and validate the configured Revolut source account without creating a payment}';
-    protected $description = 'Register bank recipients, prepare 30-day affiliate payouts, and create Revolut drafts after a seven-day hold.';
+        {--provider-check : Authenticate and validate the configured payment source account without creating a payment}';
+    protected $description = 'Register bank recipients, prepare 30-day affiliate payouts, and create payment drafts after a seven-day hold.';
 
     public function handle(AutomaticAffiliatePayouts $payouts, RevolutBankRegistration $banks, RevolutBusinessClient $client): int
     {
@@ -25,16 +25,16 @@ class ProcessAffiliatePayouts extends Command
             try {
                 $sourceAccountId = (string) config('payouts.revolut.source_account_id');
                 if ($sourceAccountId === '') {
-                    throw new \RuntimeException('Missing Revolut source account setting.');
+                    throw new \RuntimeException('Missing payment source account setting.');
                 }
                 $source = $client->get('/accounts/'.rawurlencode($sourceAccountId));
                 if (($source['currency'] ?? null) !== 'EUR' || ($source['state'] ?? null) !== 'active') {
                     throw new \RuntimeException('Configured source account is not an active EUR account.');
                 }
-                $this->info('Revolut provider check passed: Production authentication and active EUR source account verified.');
+                $this->info('Payment provider check passed: Production authentication and active EUR source account verified.');
                 return self::SUCCESS;
             } catch (Throwable $exception) {
-                $this->error('Revolut provider check failed; verify credentials, permissions and the EUR source account.');
+                $this->error('Payment provider check failed; verify credentials, permissions and the EUR source account.');
                 return self::FAILURE;
             }
         }

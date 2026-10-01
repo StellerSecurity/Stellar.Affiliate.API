@@ -70,6 +70,6 @@ class AffiliateBankDetailsController extends Controller
                 ->where('status', 'pending')->update(['attention_reason' => 'bank_details_changed']);
         });
 
-        return back()->with('status', 'Bank details saved securely. They will be checked with Revolut before payment.');
+        return back()->with('status', 'Bank details saved securely. They will be verified before payment.');
     }
 }

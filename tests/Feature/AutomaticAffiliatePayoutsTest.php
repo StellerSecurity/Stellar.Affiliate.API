@@ -7,8 +7,10 @@ use App\Models\AffiliateCommission;
 use App\Models\AffiliatePayoutMethod;
 use App\Models\Payout;
 use App\Services\AutomaticAffiliatePayouts;
+use App\Services\AffiliatePayoutSlackNotifier;
 use App\Services\RevolutBusinessClient;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -23,7 +25,11 @@ class AutomaticAffiliatePayoutsTest extends TestCase
         parent::setUp();
         config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => ':memory:',
             'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
-            'payouts.revolut.source_account_id' => 'source', 'payouts.revolut.environment' => 'sandbox']);
+            'payouts.revolut.source_account_id' => 'source', 'payouts.revolut.environment' => 'sandbox',
+            'payouts.slack.channel_id' => 'C0C6XNYD3H6',
+            'payouts.slack.admin_url' => 'https://stellarafi.com/affiliate/admin/payouts',
+            'services.slack.notifications.bot_user_oauth_token' => 'xoxb-test-token']);
+        Http::fake(['slack.com/api/chat.postMessage' => Http::response(['ok' => true, 'ts' => '123.456'])]);
         app('db')->purge('sqlite');
         // Isolated schema avoids unrelated historical data-repair migrations.
         Schema::create('affiliates', function (Blueprint $table) {
@@ -58,7 +64,7 @@ class AutomaticAffiliatePayoutsTest extends TestCase
         $method->data = ['environment' => 'sandbox', 'counterparty_id' => 'recipient', 'account_id' => 'destination', 'iban_last_four' => '3000'];
         $method->save();
         $this->bank = new FakeRevolutClient;
-        $this->service = new AutomaticAffiliatePayouts($this->bank);
+        $this->service = new AutomaticAffiliatePayouts($this->bank, new AffiliatePayoutSlackNotifier);
     }
 
     private function commission(string $amount = '100.005400', string $status = 'approved'): AffiliateCommission
@@ -83,6 +89,11 @@ class AutomaticAffiliatePayoutsTest extends TestCase
         $this->assertSame('processing', $payout->fresh()->status);
         $this->assertSame('draft', $payout->fresh()->provider_state);
         $this->assertSame(100.0, $this->bank->drafts[0]['payments'][0]['amount']);
+        $this->assertNotNull($payout->fresh()->method_details_snapshot['slack_notified_at'] ?? null);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request) => $request['channel'] === 'C0C6XNYD3H6'
+            && $request['text'] === 'An affiliate payout is ready for finance approval.'
+            && ! str_contains(strtolower(json_encode($request->data())), 'revolut'));
 
         $this->bank->draftExists = false;
         $this->bank->transactionState = 'completed';

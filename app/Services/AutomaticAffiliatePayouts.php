@@ -9,12 +9,17 @@ use App\Support\PayoutPolicy;
 use DateTimeImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 class AutomaticAffiliatePayouts
 {
-    public function __construct(private RevolutBusinessClient $client) {}
+    public function __construct(
+        private RevolutBusinessClient $client,
+        private ?AffiliatePayoutSlackNotifier $slackNotifier = null,
+    ) {}
 
     private function fingerprint(Collection $commissions): string
     {
@@ -88,7 +93,7 @@ class AutomaticAffiliatePayouts
     {
         $data = $method->data;
         if (empty($data['counterparty_id']) || empty($data['account_id']) || ! config('payouts.revolut.source_account_id')) {
-            throw new RuntimeException('Missing Revolut account mapping.');
+            throw new RuntimeException('Missing payment account mapping.');
         }
 
         return [
@@ -106,7 +111,7 @@ class AutomaticAffiliatePayouts
     {
         $initial = Payout::findOrFail($payoutId);
         if ($initial->provider_environment !== $this->client->environment()) {
-            throw new RuntimeException('Payout belongs to a different Revolut environment.');
+            throw new RuntimeException('Payout belongs to a different payment provider environment.');
         }
         $this->client->authenticate();
         if (in_array($initial->status, ['processing', 'paid'], true)) {
@@ -190,7 +195,10 @@ class AutomaticAffiliatePayouts
         });
         if ($claimed) {
             $draft = $this->client->createPaymentDraft($claimed['payload']);
-            $this->recordDraft($claimed['id'], $draft);
+            $payout = $this->recordDraft($claimed['id'], $draft);
+            if ($payout) {
+                $this->notifyDraftIfNeeded($payout);
+            }
         }
     }
 
@@ -204,19 +212,19 @@ class AutomaticAffiliatePayouts
         return 'Stellar affiliate '.$payout->id;
     }
 
-    private function recordDraft(int $id, array $draft): void
+    private function recordDraft(int $id, array $draft): ?Payout
     {
         if (empty($draft['id']) || ! is_string($draft['id'])) {
-            throw new RuntimeException('Incomplete Revolut payment draft response.');
+            throw new RuntimeException('Incomplete payment draft response.');
         }
-        DB::transaction(function () use ($id, $draft) {
+        return DB::transaction(function () use ($id, $draft) {
             $payout = Payout::whereKey($id)->lockForUpdate()->firstOrFail();
             if ($payout->status !== 'processing') {
-                return;
+                return null;
             }
             $snapshot = $payout->method_details_snapshot;
             if (! empty($snapshot['draft_id']) && $snapshot['draft_id'] !== $draft['id']) {
-                throw new RuntimeException('Revolut payment draft ID mismatch.');
+                throw new RuntimeException('Payment draft ID mismatch.');
             }
             $snapshot['submission_type'] = 'payment_draft';
             $snapshot['draft_id'] = $draft['id'];
@@ -226,7 +234,38 @@ class AutomaticAffiliatePayouts
             $payout->checked_at = now();
             $payout->attention_reason = null;
             $payout->save();
+
+            return $payout;
         });
+    }
+
+    private function notifyDraftIfNeeded(Payout $payout): void
+    {
+        $snapshot = $payout->method_details_snapshot;
+        if (! empty($snapshot['slack_notified_at'])) {
+            return;
+        }
+
+        try {
+            $notifier = $this->slackNotifier ?: app(AffiliatePayoutSlackNotifier::class);
+            $messageTimestamp = $notifier->sendReadyForApproval($payout);
+            DB::transaction(function () use ($payout, $messageTimestamp) {
+                $locked = Payout::whereKey($payout->id)->lockForUpdate()->firstOrFail();
+                $snapshot = $locked->method_details_snapshot;
+                if (! empty($snapshot['slack_notified_at'])) {
+                    return;
+                }
+                $snapshot['slack_notified_at'] = now()->toIso8601String();
+                $snapshot['slack_message_ts'] = $messageTimestamp;
+                $locked->method_details_snapshot = $snapshot;
+                $locked->save();
+            });
+        } catch (Throwable $exception) {
+            Log::error('Affiliate payout Slack notification failed.', [
+                'payout_id' => $payout->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function reconcileDraft(Payout $payout): void
@@ -242,13 +281,17 @@ class AutomaticAffiliatePayouts
                 return;
             }
             if (count($matches) === 1) {
-                $this->recordDraft($payout->id, $matches[0]);
+                $recorded = $this->recordDraft($payout->id, $matches[0]);
+                if ($recorded) {
+                    $this->notifyDraftIfNeeded($recorded);
+                }
                 return;
             }
         } elseif ($this->client->paymentDraft($draftId)) {
             Payout::whereKey($payout->id)->where('status', 'processing')->update([
                 'provider_state' => 'draft', 'checked_at' => now(), 'attention_reason' => null,
             ]);
+            $this->notifyDraftIfNeeded($payout->fresh());
             return;
         }
 
@@ -297,7 +340,7 @@ class AutomaticAffiliatePayouts
     private function record(int $id, array $transaction): void
     {
         if (empty($transaction['id']) || ! is_string($transaction['state'] ?? null)) {
-            throw new RuntimeException('Incomplete Revolut payment response.');
+            throw new RuntimeException('Incomplete payment response.');
         }
         $transaction['state'] = strtolower($transaction['state']);
         $initial = Payout::findOrFail($id);
@@ -310,7 +353,7 @@ class AutomaticAffiliatePayouts
             $snapshot = $payout->method_details_snapshot;
             $isDraft = ($snapshot['submission_type'] ?? null) === 'payment_draft';
             if (! $isDraft && $payout->external_reference && $payout->external_reference !== $transaction['id']) {
-                throw new RuntimeException('Revolut transaction ID mismatch.');
+                throw new RuntimeException('Payment transaction ID mismatch.');
             }
             $payout->external_reference = $transaction['id'];
             $payout->provider_state = $transaction['state'];
@@ -324,7 +367,7 @@ class AutomaticAffiliatePayouts
                         'affiliate_commission_id' => $commission->id,
                         'from_status' => $commission->status,
                         'to_status' => 'paid_out',
-                        'note' => 'Revolut completed payout '.$payout->id,
+                        'note' => 'Payment provider completed payout '.$payout->id,
                     ]);
                     $commission->status = 'paid_out';
                     $commission->paid_out_at = $payout->paid_at;
@@ -337,7 +380,7 @@ class AutomaticAffiliatePayouts
                             'affiliate_commission_id' => $commission->id,
                             'from_status' => $commission->status,
                             'to_status' => 'approved',
-                            'note' => 'Revolut returned payout '.$payout->id.'; funds remain reserved for reconciliation.',
+                            'note' => 'Payment provider returned payout '.$payout->id.'; funds remain reserved for reconciliation.',
                         ]);
                         $commission->status = 'approved';
                         $commission->paid_out_at = null;
