@@ -161,3 +161,28 @@ stages:
                     "healthCheckPath": "/up"
                   }
                 ]
+
+          - task: AzureCLI@2
+            displayName: 'Send approved payout-details test email'
+            condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/stellar/affiliate-payout-details-email'))
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: $(Pipeline.Workspace)/drop
+              inlineScript: |
+                set -euo pipefail
+                umask 077
+                settings_file="$(Agent.TempDirectory)/stellar-affiliate-appsettings.json"
+                work_dir="$(Agent.TempDirectory)/stellar-affiliate-test-mail"
+                package_path="$(find "$(Pipeline.Workspace)/drop" -maxdepth 1 -name '*.zip' -print -quit)"
+                test -n "$package_path"
+                rm -rf "$work_dir"
+                mkdir -p "$work_dir"
+                unzip -q "$package_path" -d "$work_dir"
+                trap 'rm -rf "$settings_file" "$work_dir"' EXIT
+                az webapp config appsettings list \
+                  --resource-group $(resourceGroupName) \
+                  --name $(webAppName) \
+                  --output json > "$settings_file"
+                php "$work_dir/scripts/run-artisan-with-app-settings.php" "$settings_file" affiliate:email-payout-details --send --test=blerim@cazimi.dk --no-interaction
