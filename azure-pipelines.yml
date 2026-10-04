@@ -104,7 +104,7 @@ stages:
             --resource-group $(resourceGroupName) \
             --name $(webAppName) \
             --output json > "$settings_file"
-          php scripts/run-artisan-with-app-settings.php "$settings_file" affiliate:process-payouts --no-interaction
+          php scripts/run-artisan-with-app-settings.php "$settings_file" affiliate:process-payouts --allow-attention --no-interaction
 
     - task: ArchiveFiles@2
       displayName: 'Archive files'

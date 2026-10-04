@@ -16,7 +16,8 @@ class ProcessAffiliatePayouts extends Command
 {
     protected $signature = 'affiliate:process-payouts
         {--preview : Read-only readiness counts; no bank API calls or database writes}
-        {--provider-check : Authenticate and validate the configured payment source account without creating a payment}';
+        {--provider-check : Authenticate and validate the configured payment source account without creating a payment}
+        {--allow-attention : Return success after recording payout items that require operator attention}';
     protected $description = 'Register bank recipients, prepare 30-day affiliate payouts, and create payment drafts after a seven-day hold.';
 
     public function handle(AutomaticAffiliatePayouts $payouts, RevolutBankRegistration $banks, RevolutBusinessClient $client): int
@@ -84,6 +85,11 @@ class ProcessAffiliatePayouts extends Command
         if (Payout::whereNotNull('request_id')->whereNotNull('attention_reason')->exists()) {
             $failed = true;
             $this->error('Some automatic payouts require operator attention.');
+        }
+
+        if ($failed && $this->option('allow-attention')) {
+            $this->warn('Scheduled payout processing completed with items requiring operator attention.');
+            return self::SUCCESS;
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;

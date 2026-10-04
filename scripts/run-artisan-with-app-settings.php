@@ -10,6 +10,7 @@ $allowed = [
     ['affiliate:process-payouts', '--provider-check'],
     ['affiliate:process-payouts', '--preview'],
     ['affiliate:process-payouts', '--no-interaction'],
+    ['affiliate:process-payouts', '--allow-attention', '--no-interaction'],
     ['affiliate:email-payout-details', '--preview', '--no-interaction'],
     ['affiliate:email-payout-details', '--send', '--no-interaction'],
     ['affiliate:email-payout-details', '--send', '--test=blerim@cazimi.dk', '--no-interaction'],
