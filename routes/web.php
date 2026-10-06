@@ -77,6 +77,7 @@ Route::middleware(['auth:web', 'affiliate.admin'])
         Route::put('/rates', [AffiliateAdminController::class, 'globalRateUpdate'])->name('rates.update');
 
         Route::get('/commissions', [AffiliateAdminController::class, 'commissionsIndex'])->name('commissions.index');
+        Route::get('/commissions/export', [AffiliateAdminController::class, 'commissionsExport'])->name('commissions.export');
         Route::patch('/commissions/{commission}/status', [AffiliateAdminController::class, 'commissionStatusUpdate'])->name('commissions.status');
         Route::patch('/commissions/status/bulk', [AffiliateAdminController::class, 'commissionsBulkStatusUpdate'])->name('commissions.bulk-status');
 
@@ -206,4 +207,3 @@ Route::middleware(['auth:web', 'resolve.affiliate'])
 Route::get('/r/{code}', [AffiliateTrackingController::class, 'redirect'])
     ->middleware('affiliate.track.prepare')
     ->name('affiliate.track.public');
-

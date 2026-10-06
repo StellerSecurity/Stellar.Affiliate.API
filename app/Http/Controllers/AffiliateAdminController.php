@@ -899,20 +899,106 @@ class AffiliateAdminController extends Controller
 
     public function commissionsIndex(Request $request)
     {
-        $status = trim((string) $request->query('status'));
-        $type = trim((string) $request->query('type'));
-        $product = trim((string) $request->query('product'));
-        $affiliate = trim((string) $request->query('affiliate'));
-        $search = trim((string) $request->query('q'));
-        $dateFrom = trim((string) $request->query('date_from'));
-        $dateTo = trim((string) $request->query('date_to'));
+        $filters = $this->commissionLedgerFilters($request);
+        ['status' => $status, 'type' => $type, 'product' => $product, 'affiliate' => $affiliate,
+            'search' => $search, 'dateFrom' => $dateFrom, 'dateTo' => $dateTo] = $filters;
+        $query = AffiliateCommission::with(['affiliate', 'payout', 'statusLogs.changedBy', 'correctionLogs'])->orderByDesc('created_at');
+        $this->applyCommissionLedgerFilters($query, $filters);
 
+        $summary = [
+            'pending' => (float) (clone $query)->where('status', 'pending')->sum('amount'),
+            'approved' => (float) (clone $query)->where('status', 'approved')->sum('amount'),
+            'paid_out' => (float) (clone $query)->where('status', 'paid_out')->sum('amount'),
+            'rejected' => (float) (clone $query)->where('status', 'rejected')->sum('amount'),
+        ];
+
+        $commissions = $query->paginate(40)->withQueryString();
+        $products = AffiliateCommission::query()->whereNotNull('product')->distinct()->orderBy('product')->pluck('product');
+
+        return view('admin.commissions', array_merge($this->adminContext($request), compact(
+            'commissions',
+            'products',
+            'summary',
+            'status',
+            'type',
+            'product',
+            'affiliate',
+            'search',
+            'dateFrom',
+            'dateTo'
+        )));
+    }
+
+    public function commissionsExport(Request $request)
+    {
+        $filters = $this->commissionLedgerFilters($request);
+        $query = AffiliateCommission::query()->with(['affiliate:id,public_code,name,email', 'payout:id,status']);
+        $this->applyCommissionLedgerFilters($query, $filters);
+        $productPolicy = app(AffiliateCommissionPolicy::class);
+
+        return $this->streamCsv(
+            'commission-ledger-'.now()->format('Y-m-d-His').'.csv',
+            [
+                'Commission ID', 'Date', 'Affiliate Code', 'Affiliate Name', 'Affiliate Email',
+                'Order ID', 'Payment ID', 'Product', 'Product Label', 'Commission Type',
+                'Order Value', 'Currency', 'Rate Decimal', 'Rate %', 'Commission', 'Status',
+                'Eligible Payout At', 'Payout ID', 'Payout Status', 'Approved At', 'Rejected At', 'Paid Out At',
+            ],
+            function ($handle) use ($query, $productPolicy) {
+                $query->orderBy('id')->chunkById(500, function ($rows) use ($handle, $productPolicy) {
+                    foreach ($rows as $commission) {
+                        fputcsv($handle, array_map([$this, 'csvCell'], [
+                            $commission->id,
+                            $commission->created_at?->format('Y-m-d H:i:s'),
+                            $commission->affiliate?->public_code,
+                            $commission->affiliate?->name,
+                            $commission->affiliate?->email,
+                            $commission->getRawOriginal('order_id'),
+                            $commission->external_payment_id,
+                            $commission->product,
+                            $productPolicy->productLabel($commission->product),
+                            $commission->type,
+                            $commission->order_amount !== null ? number_format((float) $commission->order_amount, 2, '.', '') : null,
+                            $commission->currency ?: 'EUR',
+                            number_format((float) $commission->rate, 4, '.', ''),
+                            number_format((float) $commission->rate * 100, 4, '.', ''),
+                            number_format((float) $commission->amount, 6, '.', ''),
+                            $commission->status,
+                            $commission->eligible_payout_at?->format('Y-m-d H:i:s'),
+                            $commission->payout_id,
+                            $commission->payout?->status,
+                            $commission->approved_at?->format('Y-m-d H:i:s'),
+                            $commission->rejected_at?->format('Y-m-d H:i:s'),
+                            $commission->paid_out_at?->format('Y-m-d H:i:s'),
+                        ]), ',', '"', '');
+                    }
+                });
+            }
+        );
+    }
+
+    private function commissionLedgerFilters(Request $request): array
+    {
         $request->validate([
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
         ]);
 
-        $query = AffiliateCommission::with(['affiliate', 'payout', 'statusLogs.changedBy', 'correctionLogs'])->orderByDesc('created_at');
+        return [
+            'status' => trim((string) $request->query('status')),
+            'type' => trim((string) $request->query('type')),
+            'product' => trim((string) $request->query('product')),
+            'affiliate' => trim((string) $request->query('affiliate')),
+            'search' => trim((string) $request->query('q')),
+            'dateFrom' => trim((string) $request->query('date_from')),
+            'dateTo' => trim((string) $request->query('date_to')),
+        ];
+    }
+
+    private function applyCommissionLedgerFilters($query, array $filters): void
+    {
+        ['status' => $status, 'type' => $type, 'product' => $product, 'affiliate' => $affiliate,
+            'search' => $search, 'dateFrom' => $dateFrom, 'dateTo' => $dateTo] = $filters;
 
         if (in_array($status, ['pending', 'approved', 'rejected', 'paid_out'], true)) {
             $query->where('status', $status);
@@ -940,32 +1026,9 @@ class AffiliateAdminController extends Controller
                         $aq->where('name', 'like', "%{$search}%")
                             ->orWhere('email', 'like', "%{$search}%")
                             ->orWhere('public_code', 'like', "%{$search}%");
-                    });
+                });
             });
         }
-
-        $summary = [
-            'pending' => (float) (clone $query)->where('status', 'pending')->sum('amount'),
-            'approved' => (float) (clone $query)->where('status', 'approved')->sum('amount'),
-            'paid_out' => (float) (clone $query)->where('status', 'paid_out')->sum('amount'),
-            'rejected' => (float) (clone $query)->where('status', 'rejected')->sum('amount'),
-        ];
-
-        $commissions = $query->paginate(40)->withQueryString();
-        $products = AffiliateCommission::query()->whereNotNull('product')->distinct()->orderBy('product')->pluck('product');
-
-        return view('admin.commissions', array_merge($this->adminContext($request), compact(
-            'commissions',
-            'products',
-            'summary',
-            'status',
-            'type',
-            'product',
-            'affiliate',
-            'search',
-            'dateFrom',
-            'dateTo'
-        )));
     }
 
     public function commissionStatusUpdate(Request $request, AffiliateCommission $commission)
