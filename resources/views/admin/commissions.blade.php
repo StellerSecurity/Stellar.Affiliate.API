@@ -12,7 +12,7 @@
             <div class="stellar-field"><label class="stellar-label" for="commission-date-to">To</label><input id="commission-date-to" class="stellar-input" type="datetime-local" name="date_to" value="{{ $dateTo }}" step="60"></div>
             <div class="stellar-field"><label class="stellar-label" for="commission-product-filter">Product</label><select id="commission-product-filter" class="stellar-select" name="product"><option value="">All products</option>@foreach($products as $option)<option value="{{ $option }}" {{ $product === $option ? 'selected' : '' }}>{{ config('affiliate.products.'.$option.'.label', ucfirst($option)) }}</option>@endforeach</select></div>
             <div class="stellar-field"><label class="stellar-label" for="commission-type-filter">Type</label><select id="commission-type-filter" class="stellar-select" name="type"><option value="">All types</option>@foreach(['initial','recurring'] as $option)<option value="{{ $option }}" {{ $type === $option ? 'selected' : '' }}>{{ $option === 'initial' ? 'First payment' : 'Recurring' }}</option>@endforeach</select></div>
-            <div class="stellar-filter-actions"><button type="submit" class="stellar-btn stellar-btn-primary">Filter</button><a class="stellar-btn stellar-btn-secondary" href="{{ route('affiliate.admin.commissions.index') }}">Reset</a></div>
+            <div class="stellar-filter-actions"><button type="submit" class="stellar-btn stellar-btn-primary">Filter</button><button type="submit" class="stellar-btn stellar-btn-secondary" formaction="{{ route('affiliate.admin.commissions.export') }}">Export CSV</button><a class="stellar-btn stellar-btn-secondary" href="{{ route('affiliate.admin.commissions.index') }}">Reset</a></div>
         </form>
     </section>
 
