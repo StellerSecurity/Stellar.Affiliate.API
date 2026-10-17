@@ -7,6 +7,42 @@ use RuntimeException;
 
 class AffiliateNotificationClient
 {
+    public function sendPasswordReset(string $email, string $resetUrl, int $expiresInMinutes, string $idempotencyKey, string $userReference): void
+    {
+        $baseUrl = rtrim((string) config('stellar-notifications.base_url'), '/');
+        $username = (string) config('stellar-notifications.basic_username');
+        $password = (string) config('stellar-notifications.basic_password');
+
+        if (parse_url($baseUrl, PHP_URL_SCHEME) !== 'https' || $username === '' || $password === '') {
+            throw new RuntimeException('Stellar Notification API is not configured.');
+        }
+
+        if (! preg_match('~\Ahttps://stellarafi\.com/affiliate/reset-password/[a-f0-9]{64}\?email=[^&#]+\z~', $resetUrl)) {
+            throw new RuntimeException('Affiliate password reset URL is not trusted.');
+        }
+
+        $response = Http::withBasicAuth($username, $password)
+            ->acceptJson()->asJson()->withoutRedirecting()->connectTimeout(5)
+            ->timeout(max(5, (int) config('stellar-notifications.timeout_seconds', 45)))
+            ->post($baseUrl.'/api/v1/notification-events/ingest', [
+                'product' => 'stellar-affiliate',
+                'event_name' => 'affiliate_password_reset',
+                'email' => $email,
+                'user_ref' => $userReference,
+                'from_email' => 'info@stellarsecurity.com',
+                'from_name' => 'stellar.affiliate',
+                'idempotency_key' => $idempotencyKey,
+                'payload' => ['reset_url' => $resetUrl, 'expires_in_minutes' => $expiresInMinutes],
+            ]);
+
+        $deliveries = (int) $response->json('data.deliveries_created', 0)
+            + (int) $response->json('data.deliveries_existing', 0);
+
+        if (! $response->successful() || $deliveries < 1) {
+            throw new RuntimeException('Affiliate password reset email was not accepted for delivery.');
+        }
+    }
+
     public function sendPayoutDetailsReminder(
         string $email,
         string $affiliateName,

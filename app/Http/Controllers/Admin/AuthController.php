@@ -88,6 +88,7 @@ class AuthController extends Controller
 
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
+        $request->session()->put('password_hash_web', $user->getAuthPassword());
 
         return redirect()
             ->route('affiliate.onboarding')
@@ -107,6 +108,7 @@ class AuthController extends Controller
 
         if (Auth::guard('web')->attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
+            $request->session()->put('password_hash_web', Auth::guard('web')->user()->getAuthPassword());
 
             /** @var User $user */
             $user = $request->user();

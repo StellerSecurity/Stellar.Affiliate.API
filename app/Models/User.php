@@ -2,13 +2,39 @@
 
 namespace App\Models;
 
+use App\Services\AffiliateNotificationClient;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Password;
+use Throwable;
 
 class User extends Authenticatable
 {
     use HasFactory, Notifiable;
+
+    public function sendPasswordResetNotification($token): void
+    {
+        // Build the link from the trusted portal origin, never the incoming Host header.
+        $url = 'https://stellarafi.com'.route('affiliate.password.reset', [
+            'token' => $token,
+            'email' => $this->getEmailForPasswordReset(),
+        ], false);
+
+        try {
+            app(AffiliateNotificationClient::class)->sendPasswordReset(
+                $this->getEmailForPasswordReset(),
+                $url,
+                (int) config('auth.passwords.users.expire', 60),
+                'password-reset-'.hash('sha256', $token),
+                (string) $this->getKey(),
+            );
+        } catch (Throwable $exception) {
+            // A failed delivery must not leave the user waiting on an unusable token.
+            Password::broker('users')->deleteToken($this);
+            throw $exception;
+        }
+    }
 
     protected $fillable = [
         'name',

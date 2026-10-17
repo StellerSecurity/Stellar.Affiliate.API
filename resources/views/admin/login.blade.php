@@ -61,6 +61,7 @@
                 <div class="stellar-field">
                     <label class="stellar-label" for="password">Password</label>
                     <input id="password" type="password" name="password" required maxlength="255" autocomplete="current-password" class="stellar-input" placeholder="Your password">
+                    <a href="{{ route('affiliate.password.request') }}" class="stellar-field-help">Forgot your password?</a>
                 </div>
 
                 <label class="stellar-checkbox">

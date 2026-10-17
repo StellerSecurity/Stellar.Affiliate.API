@@ -35,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->appendToGroup('api', \App\Http\Middleware\ApplyAffiliateCommissionPolicy::class);
+        $middleware->appendToGroup('web', \Illuminate\Session\Middleware\AuthenticateSession::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
