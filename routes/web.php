@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AffiliateTrackingController;
 use App\Http\Controllers\AffiliatePortalController;
 use App\Http\Controllers\AffiliateAdminController;
 use App\Http\Controllers\Admin\AuthController;
+use App\Http\Controllers\AffiliatePasswordResetController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +27,18 @@ Route::get('/affiliate/login', [AuthController::class, 'showLoginForm'])
 Route::post('/affiliate/login', [AuthController::class, 'login'])
     ->middleware('throttle:10,1')
     ->name('affiliate.login.post');
+
+Route::get('/affiliate/forgot-password', [AffiliatePasswordResetController::class, 'request'])
+    ->name('affiliate.password.request');
+Route::post('/affiliate/forgot-password', [AffiliatePasswordResetController::class, 'email'])
+    ->middleware('throttle:5,1,affiliate-password-email')
+    ->name('affiliate.password.email');
+Route::get('/affiliate/reset-password/{token}', [AffiliatePasswordResetController::class, 'edit'])
+    ->where('token', '[a-f0-9]{64}')
+    ->name('affiliate.password.reset');
+Route::post('/affiliate/reset-password', [AffiliatePasswordResetController::class, 'update'])
+    ->middleware('throttle:10,1,affiliate-password-reset')
+    ->name('affiliate.password.update');
 
 // Self-registration (optional, can be disabled via AFFILIATE_SELF_REGISTER_ENABLED=false)
 Route::get('/affiliate/register', [AuthController::class, 'showRegisterForm'])
