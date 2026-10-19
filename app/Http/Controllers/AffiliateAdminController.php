@@ -668,25 +668,49 @@ class AffiliateAdminController extends Controller
     {
         $this->requireProgramManager($request);
 
+        $portalUser = $this->affiliatePortalUser($affiliate);
+        $emailRules = [$portalUser ? 'required' : 'nullable', 'email', 'max:255'];
+        if ($portalUser) {
+            $emailRules[] = Rule::unique('users', 'email')->ignore($portalUser->id);
+        }
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255'],
+            'email' => $emailRules,
             'status' => ['required', Rule::in(['pending', 'active', 'banned'])],
             'country' => ['nullable', 'string', 'size:2'],
             'payout_currency' => ['required', 'string', 'size:3'],
             'base_redirect_url' => ['nullable', 'url:http,https', 'max:2048'],
         ]);
 
-        $affiliate->fill([
-            'name' => trim($data['name']),
-            'email' => isset($data['email']) ? strtolower(trim((string) $data['email'])) : null,
-            'status' => $data['status'],
-            'country' => isset($data['country']) ? strtoupper(trim((string) $data['country'])) : null,
-            'payout_currency' => strtoupper($data['payout_currency']),
-            'base_redirect_url' => $data['base_redirect_url'] ?? null,
-        ])->save();
+        $email = isset($data['email']) ? mb_strtolower(trim((string) $data['email'])) : null;
 
-        return back()->with('status', 'Affiliate profile updated.');
+        if ($portalUser?->hasAffiliateAdminAccess() && $email !== mb_strtolower((string) $portalUser->email)) {
+            abort(403, 'Admin account emails cannot be changed from an affiliate profile.');
+        }
+
+        DB::transaction(function () use ($affiliate, $portalUser, $data, $email) {
+            $affiliate->fill([
+                'name' => trim($data['name']),
+                'email' => $email,
+                'status' => $data['status'],
+                'country' => isset($data['country']) ? strtoupper(trim((string) $data['country'])) : null,
+                'payout_currency' => strtoupper($data['payout_currency']),
+                'base_redirect_url' => $data['base_redirect_url'] ?? null,
+            ])->save();
+
+            if ($portalUser && $email !== mb_strtolower((string) $portalUser->email)) {
+                $portalUser->forceFill([
+                    'email' => $email,
+                    'email_verified_at' => null,
+                    'remember_token' => Str::random(60),
+                ])->save();
+            }
+        });
+
+        return back()->with('status', $portalUser
+            ? 'Affiliate profile and portal login email updated.'
+            : 'Affiliate profile updated.');
     }
 
     public function affiliatePasswordUpdate(Request $request, Affiliate $affiliate)
