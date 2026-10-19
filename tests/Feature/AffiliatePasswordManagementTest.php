@@ -103,6 +103,49 @@ class AffiliatePasswordManagementTest extends TestCase
         $this->assertTrue(Hash::check('admin-set-password-123', $affiliateUser->fresh()->password));
     }
 
+    public function test_admin_profile_update_changes_linked_affiliate_login_email(): void
+    {
+        $admin = User::create([
+            'name' => 'Program Admin',
+            'email' => 'admin@example.com',
+            'password' => Hash::make('admin-password'),
+            'affiliate_admin_role' => 'admin',
+        ]);
+
+        $affiliateUser = User::create([
+            'name' => 'Affiliate User',
+            'email' => 'wrong@example.com',
+            'password' => Hash::make('old-password'),
+            'email_verified_at' => now(),
+            'remember_token' => 'existing-token',
+        ]);
+
+        $affiliate = Affiliate::create([
+            'external_user_id' => $affiliateUser->id,
+            'name' => 'Affiliate User',
+            'email' => 'wrong@example.com',
+            'public_code' => 'EMAILFIX',
+            'status' => 'active',
+            'payout_currency' => 'EUR',
+        ]);
+
+        $response = $this->actingAs($admin)->patch(route('affiliate.admin.affiliates.update', $affiliate), [
+            'name' => 'Affiliate User',
+            'email' => 'correct@example.com',
+            'status' => 'active',
+            'country' => null,
+            'payout_currency' => 'EUR',
+            'base_redirect_url' => null,
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('status', 'Affiliate profile and portal login email updated.');
+        $this->assertSame('correct@example.com', $affiliate->fresh()->email);
+        $this->assertSame('correct@example.com', $affiliateUser->fresh()->email);
+        $this->assertNull($affiliateUser->fresh()->email_verified_at);
+        $this->assertNotSame('existing-token', $affiliateUser->fresh()->remember_token);
+    }
+
     public function test_admin_can_create_and_link_portal_login_when_affiliate_has_email(): void
     {
         $admin = User::create([
